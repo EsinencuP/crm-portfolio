@@ -1,0 +1,190 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String?
+  avatarUrl     String?
+  role          Role      @default(MEMBER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  contacts      Contact[] @relation("ContactOwner")
+  deals         Deal[]    @relation("DealOwner")
+  activities    Activity[]
+  notes         Note[]
+  accounts      Account[]
+  sessions      Session[]
+}
+enum Role {
+  ADMIN
+  MANAGER
+  MEMBER
+  VIEWER
+}
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+}
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+model Contact {
+  id            String        @id @default(cuid())
+  firstName     String
+  lastName      String
+  email         String?       @unique
+  phone         String?
+  jobTitle      String?
+  avatarUrl     String?
+  source        ContactSource @default(MANUAL)
+  status        ContactStatus @default(ACTIVE)
+  city          String?
+  country       String?
+  linkedinUrl   String?
+  notes_text    String?
+  companyId     String?
+  company       Company?      @relation(fields: [companyId], references: [id])
+  ownerId       String?
+  owner         User?         @relation("ContactOwner", fields: [ownerId], references: [id])
+  deals         Deal[]
+  activities    Activity[]
+  notes         Note[]
+  tags          Tag[]
+  customFields  Json?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+enum ContactSource {
+  MANUAL
+  IMPORT
+  WEBSITE
+  REFERRAL
+  LINKEDIN
+  API
+}
+enum ContactStatus {
+  ACTIVE
+  INACTIVE
+  ARCHIVED
+}
+model Company {
+  id          String    @id @default(cuid())
+  name        String
+  domain      String?   @unique
+  industry    String?
+  size        String?
+  logoUrl     String?
+  website     String?
+  address     String?
+  description String?
+  phone       String?
+  contacts    Contact[]
+  deals       Deal[]
+  notes       Note[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+model PipelineStage {
+  id          String    @id @default(cuid())
+  name        String
+  color       String    @default("#6366f1")
+  position    Int
+  probability Int       @default(0)
+  deals       Deal[]
+}
+model Deal {
+  id          String        @id @default(cuid())
+  title       String
+  value       Decimal?      @db.Decimal(12, 2)
+  currency    String        @default("USD")
+  closeDate   DateTime?
+  priority    DealPriority  @default(MEDIUM)
+  description String?
+  stageId     String
+  stage       PipelineStage @relation(fields: [stageId], references: [id])
+  contactId   String?
+  contact     Contact?      @relation(fields: [contactId], references: [id])
+  companyId   String?
+  company     Company?      @relation(fields: [companyId], references: [id])
+  ownerId     String?
+  owner       User?         @relation("DealOwner", fields: [ownerId], references: [id])
+  activities  Activity[]
+  notes       Note[]
+  tags        Tag[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+enum DealPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+model Activity {
+  id          String        @id @default(cuid())
+  type        ActivityType
+  title       String
+  description String?
+  dueDate     DateTime?
+  completed   Boolean       @default(false)
+  completedAt DateTime?
+  contactId   String?
+  contact     Contact?      @relation(fields: [contactId], references: [id])
+  dealId      String?
+  deal        Deal?         @relation(fields: [dealId], references: [id])
+  ownerId     String
+  owner       User          @relation(fields: [ownerId], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+}
+enum ActivityType {
+  CALL
+  EMAIL
+  MEETING
+  TASK
+  NOTE
+  FOLLOW_UP
+}
+model Note {
+  id          String    @id @default(cuid())
+  content     String
+  contactId   String?
+  contact     Contact?  @relation(fields: [contactId], references: [id])
+  companyId   String?
+  company     Company?  @relation(fields: [companyId], references: [id])
+  dealId      String?
+  deal        Deal?     @relation(fields: [dealId], references: [id])
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+model Tag {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  color     String    @default("#3b82f6")
+  contacts  Contact[]
+  deals     Deal[]
+}
