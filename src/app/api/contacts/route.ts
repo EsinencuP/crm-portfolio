@@ -135,6 +135,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to create contacts." }, { status: 401, headers });
+  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
     return Response.json({ error: "Please send contact details as JSON." }, { status: 415, headers });

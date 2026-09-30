@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import Link from "next/link";
 
+import type { Role } from "@prisma/client";
 import { CircleUser, EllipsisVertical, LoaderCircle, LogOut, Settings } from "lucide-react";
 import type { Session } from "next-auth";
 import { signOut, useSession } from "next-auth/react";
@@ -40,7 +41,7 @@ function UserAvatar({ user }: { user: Session["user"] }) {
   );
 }
 
-export function NavUser({ variant = "sidebar" }: { variant?: "sidebar" | "header" } = {}) {
+export function NavUser({ variant = "sidebar", currentRole }: { variant?: "sidebar" | "header"; currentRole: Role }) {
   const { data: session, status } = useSession();
   const { isMobile, setOpenMobile } = useSidebar();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -61,16 +62,15 @@ export function NavUser({ variant = "sidebar" }: { variant?: "sidebar" | "header
 
   const user = session.user;
   const name = user.name?.trim() || user.email || "User";
-  const role = roleLabels[user.role];
+  const role = roleLabels[currentRole];
 
   async function handleSignOut() {
     if (isSigningOut) return;
     setIsSigningOut(true);
     setError(null);
     try {
-      const result = await signOut({ redirect: false, redirectTo: "/login" });
-      if (!result?.url) throw new Error("Missing sign-out redirect");
-      window.location.assign(result.url);
+      await signOut({ redirect: false });
+      window.location.assign("/login");
     } catch {
       setError("Unable to sign out. Please try again.");
       setIsSigningOut(false);

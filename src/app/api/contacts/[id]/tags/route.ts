@@ -14,6 +14,7 @@ type Context = { params: Promise<{ id: string }> };
 export async function POST(request: Request, { params }: Context) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to add tags." }, { status: 401, headers });
+  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
 

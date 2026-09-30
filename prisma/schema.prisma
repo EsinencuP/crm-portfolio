@@ -20,12 +20,30 @@ model User {
   notes         Note[]
   accounts      Account[]
   sessions      Session[]
+  sentInvites   TeamInvite[] @relation("InviteSender")
 }
 enum Role {
   ADMIN
   MANAGER
   MEMBER
   VIEWER
+}
+model TeamInvite {
+  id          String    @id @default(cuid())
+  email       String    @unique
+  role        Role
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  invitedById String?
+  invitedBy   User?     @relation("InviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
+}
+model AppSettings {
+  id        String   @id @default("default")
+  appName   String   @default("CRM Portfolio")
+  timezone  String   @default("UTC")
+  updatedAt DateTime @updatedAt
 }
 model Account {
   id                String  @id @default(cuid())

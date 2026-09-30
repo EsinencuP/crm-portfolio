@@ -4,6 +4,8 @@ import { type ComponentProps, useEffect } from "react";
 
 import Link from "next/link";
 
+import type { Role } from "@prisma/client";
+
 import {
   Sidebar,
   SidebarContent,
@@ -40,7 +42,11 @@ export function AppSidebarProvider({
   );
 }
 
-export function AppSidebar(props: Omit<ComponentProps<typeof Sidebar>, "collapsible" | "children">) {
+export function AppSidebar({
+  role,
+  appName,
+  ...props
+}: Omit<ComponentProps<typeof Sidebar>, "collapsible" | "children"> & { role: Role; appName: string }) {
   const { isMobile, setOpenMobile } = useSidebar();
 
   return (
@@ -54,7 +60,7 @@ export function AppSidebar(props: Omit<ComponentProps<typeof Sidebar>, "collapsi
                 <Link
                   href="/dashboard"
                   prefetch={false}
-                  aria-label="CRM Portfolio dashboard"
+                  aria-label={`${appName} dashboard`}
                   onNavigate={() => {
                     if (isMobile) setOpenMobile(false);
                   }}
@@ -65,18 +71,16 @@ export function AppSidebar(props: Omit<ComponentProps<typeof Sidebar>, "collapsi
               <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary font-semibold text-[10px] text-sidebar-primary-foreground">
                 CRM
               </span>
-              <span className="truncate font-semibold text-base group-data-[collapsible=icon]:hidden">
-                CRM Portfolio
-              </span>
+              <span className="truncate font-semibold text-base group-data-[collapsible=icon]:hidden">{appName}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain />
+        <NavMain role={role} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser />
+        <NavUser currentRole={role} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

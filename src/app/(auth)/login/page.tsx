@@ -15,7 +15,10 @@ function getCallbackUrl(value: string | string[] | undefined) {
 
   try {
     const url = new URL(value, "https://crm.invalid");
-    if (url.origin === "https://crm.invalid" && url.pathname.startsWith("/dashboard")) {
+    if (
+      url.origin === "https://crm.invalid" &&
+      (url.pathname.startsWith("/dashboard") || url.pathname.startsWith("/invite/"))
+    ) {
       return `${url.pathname}${url.search}${url.hash}`;
     }
   } catch {

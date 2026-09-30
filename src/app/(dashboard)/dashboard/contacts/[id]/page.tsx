@@ -7,6 +7,7 @@ import { requireAuth } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
 
 import type { ContactRow } from "../_components/contacts-columns";
+import { AiBriefCard } from "./_components/ai-brief-card";
 import { type ContactDeal, ContactDeals } from "./_components/contact-deals";
 import { type ContactDetails, ContactDetailsSidebar } from "./_components/contact-details-sidebar";
 import { ContactHeader } from "./_components/contact-header";
@@ -101,6 +102,7 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       <ContactHeader contact={row} />
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
         <div className="space-y-4 md:space-y-6 lg:col-span-8">
+          <AiBriefCard contactId={contact.id} />
           <ContactTimeline contactId={contact.id} events={events} />
           <ContactDeals contactId={contact.id} deals={deals} />
         </div>

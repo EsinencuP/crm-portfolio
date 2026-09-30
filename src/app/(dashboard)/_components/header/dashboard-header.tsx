@@ -5,6 +5,8 @@ import { Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import type { Role } from "@prisma/client";
+
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -39,7 +41,7 @@ function segmentLabel(segment: string, index: number, segments: string[]) {
   }
 }
 
-export function DashboardHeader() {
+export function DashboardHeader({ currentRole }: { currentRole: Role }) {
   const pathname = usePathname();
   const segments = pathname.split("/").filter(Boolean);
   const breadcrumbs = segments.map((segment, index) => {
@@ -77,7 +79,7 @@ export function DashboardHeader() {
         <SearchDialog />
         <ThemeSwitcher />
         <NotificationsButton />
-        <UserMenu variant="header" />
+        <UserMenu variant="header" currentRole={currentRole} />
       </div>
     </header>
   );

@@ -112,9 +112,7 @@ export function ContactDeals({ contactId, deals }: { contactId: string; deals: C
                 <TableBody>
                   {deals.map((deal) => (
                     <TableRow key={deal.id}>
-                      <TableCell className="font-medium">
-                    {deal.title}
-                      </TableCell>
+                      <TableCell className="font-medium">{deal.title}</TableCell>
                       <TableCell>
                         {deal.value === null
                           ? "—"

@@ -140,6 +140,7 @@ export function RegisterForm() {
 
   return (
     <form
+      method="post"
       noValidate
       className="flex flex-col gap-4"
       onSubmit={(event) => {

@@ -2,6 +2,9 @@
   "name": "crm-portfolio",
   "version": "0.1.0",
   "private": true,
+  "prisma": {
+    "seed": "ts-node --compiler-options {\"module\":\"CommonJS\",\"moduleResolution\":\"node\"} prisma/seed.ts"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -10,10 +13,12 @@
     "format": "biome format --write .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "typecheck": "next typegen && tsc --noEmit"
+    "typecheck": "next typegen && tsc --noEmit",
+    "bootstrap:admin": "node scripts/bootstrap-admin.cjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.79",
+    "@ai-sdk/react": "^4.0.125",
     "@auth/prisma-adapter": "^2.11.3",
     "@base-ui/react": "^1.8.0",
     "@dnd-kit/abstract": "^0.5.0",
@@ -24,6 +29,7 @@
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
     "@hookform/resolvers": "^5.9.1",
+    "@next/env": "^16.3.6",
     "@prisma/client": "6.19.3",
     "@shadcn/react": "^0.3.1",
     "@tanstack/react-query": "^5.104.0",
@@ -63,6 +69,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4",
+    "ts-node": "^10.9.2",
     "typescript": "^5"
   }
 }

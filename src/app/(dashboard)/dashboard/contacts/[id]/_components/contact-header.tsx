@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 
 import { ContactFormSheet } from "../../_components/contact-form-sheet";
 import type { ContactRow } from "../../_components/contacts-columns";
+import { EmailDraftDialog } from "./email-draft-dialog";
 
 export function ContactHeader({ contact }: { contact: ContactRow }) {
   const router = useRouter();
@@ -88,6 +89,7 @@ export function ContactHeader({ contact }: { contact: ContactRow }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <EmailDraftDialog contactId={contact.id} />
             <Button
               nativeButton={false}
               variant="outline"
@@ -124,7 +126,13 @@ export function ContactHeader({ contact }: { contact: ContactRow }) {
             <DialogTitle>Schedule meeting</DialogTitle>
             <DialogDescription>Add a meeting to this contact’s activity timeline.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={(event) => { event.preventDefault(); void schedule(); }} className="space-y-4 px-4">
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              void schedule();
+            }}
+            className="space-y-4 px-4"
+          >
             <div className="space-y-1.5">
               <Label htmlFor="meeting-title">Title</Label>
               <Input

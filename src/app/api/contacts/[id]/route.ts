@@ -55,6 +55,7 @@ export async function GET(_request: Request, { params }: ContactContext) {
 export async function PATCH(request: Request, { params }: ContactContext) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to update contacts." }, { status: 401, headers });
+  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
@@ -91,6 +92,7 @@ export async function PATCH(request: Request, { params }: ContactContext) {
 export async function DELETE(_request: Request, { params }: ContactContext) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to archive contacts." }, { status: 401, headers });
+  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
