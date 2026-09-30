@@ -7,6 +7,8 @@
 
 A CRM dashboard for contacts, companies, deals, activities, analytics, and team management. Built with Next.js App Router and a PostgreSQL database.
 
+**Live demo:** [crm-portfolio-omega.vercel.app](https://crm-portfolio-omega.vercel.app) · Sign in with the [demo credentials](#demo-credentials).
+
 ![CRM dashboard screenshot placeholder](./public/screenshots/dashboard.png)
 
 > Screenshot placeholder: add a capture at `public/screenshots/dashboard.png` when the final demo UI is ready.
@@ -80,9 +82,9 @@ The Prisma schema is in `prisma/schema.prisma`. API route handlers live in `src/
 
 ## Deploying to Vercel
 
-1. Create a dedicated hosted PostgreSQL database reachable from Vercel. Apply the schema to that database with `DATABASE_URL` set to its connection string: `npx prisma db push`.
+1. Create a dedicated hosted PostgreSQL database reachable from Vercel. Apply the schema with `npx prisma db push` using its direct connection URL; keep the pooled URL in `DATABASE_URL` for the running app.
 2. Link or import this GitHub repository in Vercel. Set `DATABASE_URL` and a new `AUTH_SECRET` for the deployment. Add `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `OPENAI_API_KEY` only if those features are enabled. Configure the Google OAuth callback URL for the deployed domain.
-3. Deploy with `vercel deploy --prod` or through the connected Git repository. [`vercel.json`](./vercel.json) generates Prisma Client during the build.
+3. Deploy with `vercel deploy --prod` or through the connected Git repository. [`vercel.json`](./vercel.json) generates Prisma Client during the build. [`.vercelignore`](./.vercelignore) excludes local environment files from CLI uploads.
 4. Verify `/login`, an authenticated `/dashboard`, and a database-backed page on the deployed URL. Seed the hosted database only if the deployment is explicitly a disposable demo.
 
 Team invitation links are created in **Settings → Team & roles** and must be shared manually; the app does not send invitation emails.
