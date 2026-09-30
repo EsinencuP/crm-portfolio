@@ -4,9 +4,12 @@ import { useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
 import { format, subMonths } from "date-fns";
+import { BarChart3 } from "lucide-react";
 import type { DateRange } from "react-day-picker";
 
 import { DateRangePicker } from "@/components/date-range-picker";
+import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 import { DealCycleTime } from "./_components/deal-cycle-time";
@@ -15,6 +18,7 @@ import { PipelineFunnelChart } from "./_components/pipeline-funnel-chart";
 import { RevenueOverTime } from "./_components/revenue-over-time";
 import { TopPerformers } from "./_components/top-performers";
 import { WinLossRatio } from "./_components/win-loss-ratio";
+import AnalyticsLoading from "./loading";
 
 type Analytics = {
   currency: string;
@@ -53,12 +57,27 @@ export default function AnalyticsPage() {
       <p className="rounded-lg border p-8 text-center text-muted-foreground">Select a start and end date.</p>
     );
   } else if (query.isLoading) {
-    chartContent = <p className="rounded-lg border p-8 text-center text-muted-foreground">Loading analytics…</p>;
+    chartContent = <AnalyticsLoading />;
   } else if (query.isError) {
     chartContent = (
-      <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-destructive">
-        {query.error.message}
-      </p>
+      <div
+        role="alert"
+        className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 p-4 text-destructive"
+      >
+        <span>{query.error.message}</span>
+        <Button variant="outline" size="sm" onClick={() => void query.refetch()}>
+          Retry
+        </Button>
+      </div>
+    );
+  } else if (data?.pipeline.every((stage) => stage.count === 0)) {
+    chartContent = (
+      <EmptyState
+        icon={BarChart3}
+        title="No analytics for this period"
+        description="Add deals or choose another date range to see your reports."
+        action={{ label: "View deals", href: "/dashboard/deals" }}
+      />
     );
   } else if (data) {
     chartContent = (

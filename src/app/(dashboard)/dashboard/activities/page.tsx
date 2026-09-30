@@ -3,13 +3,15 @@
 import { useState } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { CalendarDays, Plus } from "lucide-react";
 
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 
 import { ActivitiesCalendar, type Activity } from "./_components/activities-calendar";
 import { ActivitiesList } from "./_components/activities-list";
 import { ActivityFormDialog } from "./_components/activity-form-dialog";
+import ActivitiesLoading from "./loading";
 
 async function fetchActivities(signal: AbortSignal): Promise<Activity[]> {
   const getPage = async (page: number) => {
@@ -53,9 +55,16 @@ export default function ActivitiesPage() {
           </Button>
         </div>
       )}
-      {query.isLoading ? (
-        <p className="rounded-lg border p-10 text-center text-muted-foreground">Loading activities…</p>
-      ) : (
+      {query.isLoading && <ActivitiesLoading />}
+      {!query.isLoading && !query.isError && query.data?.length === 0 && (
+        <EmptyState
+          icon={CalendarDays}
+          title="No activities yet"
+          description="Schedule a call, meeting, or follow-up to keep work moving."
+          action={{ label: "Add Activity", onClick: () => setDialogOpen(true) }}
+        />
+      )}
+      {!query.isLoading && !query.isError && query.data && query.data.length > 0 && (
         <div className="grid min-w-0 gap-4 md:gap-6 lg:grid-cols-5">
           <div className="min-w-0 lg:col-span-3">
             <ActivitiesCalendar activities={query.data ?? []} onChanged={changed} />

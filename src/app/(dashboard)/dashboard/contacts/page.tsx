@@ -11,9 +11,11 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
+import { Users } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/empty-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +37,7 @@ import {
 } from "./_components/contacts-columns";
 import { ContactsTable } from "./_components/contacts-table";
 import { ContactsToolbar } from "./_components/contacts-toolbar";
+import ContactsLoading from "./loading";
 
 type ContactsResponse = {
   contacts: ContactRow[];
@@ -287,7 +290,7 @@ export default function ContactsPage() {
         }}
       />
 
-      {query.isError ? (
+      {query.isError && (
         <div
           role="alert"
           className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-destructive text-sm"
@@ -297,17 +300,36 @@ export default function ContactsPage() {
             Retry
           </Button>
         </div>
-      ) : (
-        <ContactsTable
-          table={table}
-          view={view}
-          loading={sessionStatus === "loading" || query.isLoading}
-          fetching={query.isFetching}
-          total={query.data?.total ?? 0}
-          onEdit={openEdit}
-          onArchive={openArchive}
-        />
       )}
+      {!query.isError && (sessionStatus === "loading" || query.isLoading) && <ContactsLoading />}
+      {!query.isError &&
+        !query.isLoading &&
+        query.data?.total === 0 &&
+        !search &&
+        !statuses.length &&
+        !sources.length &&
+        !ownerId && (
+          <EmptyState
+            icon={Users}
+            title="No contacts yet"
+            description="Add your first contact to keep conversations and deals connected."
+            action={{ label: "Add Contact", onClick: () => setSheetOpen(true) }}
+          />
+        )}
+      {!query.isError &&
+        !query.isLoading &&
+        query.data &&
+        !(query.data.total === 0 && !search && !statuses.length && !sources.length && !ownerId) && (
+          <ContactsTable
+            table={table}
+            view={view}
+            loading={query.isLoading}
+            fetching={query.isFetching}
+            total={query.data?.total ?? 0}
+            onEdit={openEdit}
+            onArchive={openArchive}
+          />
+        )}
 
       <AlertDialog
         open={dialogOpen}

@@ -10,10 +10,11 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
+import { Building2, Plus } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { toast } from "sonner";
 
+import { EmptyState } from "@/components/empty-state";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -173,7 +174,7 @@ export default function CompaniesPage() {
           }}
         />
       </div>
-      {query.isError ? (
+      {query.isError && (
         <div
           role="alert"
           className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-destructive text-sm"
@@ -183,7 +184,16 @@ export default function CompaniesPage() {
             Retry
           </Button>
         </div>
-      ) : (
+      )}
+      {!query.isError && !query.isLoading && query.data?.total === 0 && !search && !industry && !size && (
+        <EmptyState
+          icon={Building2}
+          title="No companies yet"
+          description="Create your first company to connect contacts and deals."
+          action={{ label: "Add Company", onClick: () => setSheetOpen(true) }}
+        />
+      )}
+      {!query.isError && !(query.data?.total === 0 && !search && !industry && !size) && (
         <CompaniesTable
           table={table}
           loading={sessionStatus === "loading" || query.isLoading}

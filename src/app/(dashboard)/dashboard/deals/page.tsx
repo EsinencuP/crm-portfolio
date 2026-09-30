@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useQuery } from "@tanstack/react-query";
-import { Columns3, List, Plus } from "lucide-react";
+import { BriefcaseBusiness, Columns3, List, Plus } from "lucide-react";
 
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -13,6 +14,7 @@ import { DealFormSheet } from "./_components/deal-form-sheet";
 import { DealsKanban, fetchDeals } from "./_components/deals-kanban";
 import { DealsTable } from "./_components/deals-table";
 import type { PipelineStage } from "./_components/pipeline-column";
+import DealsLoading from "./loading";
 
 type View = "kanban" | "table";
 const viewKey = "crm-deals-view";
@@ -170,11 +172,25 @@ export default function DealsPage() {
           </Button>
         </div>
       )}
-      {view === "kanban" && <DealsKanban />}
-      {view === "table" && (dealsQuery.isLoading || stagesQuery.isLoading) && (
-        <div className="rounded-xl border p-10 text-center text-muted-foreground">Loading deals…</div>
-      )}
-      {view === "table" && !dealsQuery.isLoading && !stagesQuery.isLoading && (
+      {(dealsQuery.isLoading || stagesQuery.isLoading) && <DealsLoading />}
+      {!dealsQuery.isLoading &&
+        !stagesQuery.isLoading &&
+        !dealsQuery.isError &&
+        !stagesQuery.isError &&
+        deals.length === 0 && (
+          <EmptyState
+            icon={BriefcaseBusiness}
+            title="No deals yet"
+            description="Add a deal to start tracking your pipeline and forecast."
+            action={
+              stages.length
+                ? { label: "Add Deal", onClick: () => setFormOpen(true) }
+                : { label: "Configure pipeline", href: "/dashboard/settings/pipeline" }
+            }
+          />
+        )}
+      {view === "kanban" && !dealsQuery.isLoading && !stagesQuery.isLoading && deals.length > 0 && <DealsKanban />}
+      {view === "table" && !dealsQuery.isLoading && !stagesQuery.isLoading && deals.length > 0 && (
         <DealsTable deals={deals} stages={stages} onEdit={editDeal} />
       )}
       <DealFormSheet open={formOpen} onOpenChange={setFormOpen} deal={editing} stages={stages} />
