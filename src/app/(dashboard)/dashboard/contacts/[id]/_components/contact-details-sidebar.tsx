@@ -40,7 +40,15 @@ const fields: { key: EditableField; label: string; type: string }[] = [
   { key: "country", label: "Country", type: "text" },
 ];
 
-export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) {
+export function ContactDetailsSidebar({
+  contact,
+  canEdit,
+  canShare,
+}: {
+  contact: ContactDetails;
+  canEdit: boolean;
+  canShare: boolean;
+}) {
   const router = useRouter();
   const [editing, setEditing] = useState<EditableField | null>(null);
   const [draft, setDraft] = useState("");
@@ -144,6 +152,7 @@ export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) 
             ) : (
               <button
                 type="button"
+                disabled={!canEdit}
                 className="flex w-full items-center justify-between gap-2 rounded-md text-left hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
                 onClick={() => {
                   setEditing(key);
@@ -166,7 +175,7 @@ export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) 
             onValueChange={(value) => {
               if (value) void patch({ source: value });
             }}
-            disabled={saving}
+            disabled={saving || !canEdit}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -187,7 +196,7 @@ export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) 
             onValueChange={(value) => {
               if (value) void patch({ status: value });
             }}
-            disabled={saving}
+            disabled={saving || !canEdit}
           >
             <SelectTrigger className="w-full">
               <SelectValue />
@@ -205,9 +214,11 @@ export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-muted-foreground text-xs">Owner</Label>
-            <Button variant="ghost" size="sm" onClick={() => void loadMembers()}>
-              Reassign
-            </Button>
+            {canShare && (
+              <Button variant="ghost" size="sm" onClick={() => void loadMembers()}>
+                Reassign
+              </Button>
+            )}
           </div>
           {contact.owner ? (
             <div className="flex items-center gap-2">
@@ -243,9 +254,11 @@ export function ContactDetailsSidebar({ contact }: { contact: ContactDetails }) 
         <div className="space-y-2">
           <div className="flex items-center justify-between">
             <Label className="text-muted-foreground text-xs">Tags</Label>
-            <Button size="icon-sm" variant="ghost" aria-label="Add tag" onClick={() => setAddingTag(true)}>
-              <Plus />
-            </Button>
+            {canEdit && (
+              <Button size="icon-sm" variant="ghost" aria-label="Add tag" onClick={() => setAddingTag(true)}>
+                <Plus />
+              </Button>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             {contact.tags.length ? (

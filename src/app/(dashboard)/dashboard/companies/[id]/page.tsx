@@ -7,8 +7,9 @@ import { ArrowLeft, Globe, MapPin, Phone } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { requireAuth } from "@/lib/auth-utils";
+import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 import type { CompanyRow } from "../_components/companies-columns";
 import { CompanyContactsTab } from "./_components/company-contacts-tab";
@@ -33,12 +34,20 @@ function formatDealTotals(totals: Record<string, string>) {
 }
 
 export default async function CompanyPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAuth();
+  const member = await requireActiveWorkspaceMember();
   const { id } = await params;
+  if (!(await canAccess(member.userId, "Company", id, "VIEW"))) notFound();
+  const [contactIds, dealIds, canEdit, canDelete] = await Promise.all([
+    getAccessibleEntityIds(member.userId, "Contact", member.workspaceId),
+    getAccessibleEntityIds(member.userId, "Deal", member.workspaceId),
+    canAccess(member.userId, "Company", id, "EDIT"),
+    canAccess(member.userId, "Company", id, "FULL"),
+  ]);
   const company = await prisma.company.findUnique({
-    where: { id },
+    where: { id, workspaceId: member.workspaceId },
     include: {
       contacts: {
+        where: { id: { in: contactIds } },
         select: {
           id: true,
           firstName: true,
@@ -50,9 +59,15 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
         },
         orderBy: { createdAt: "desc" },
       },
-      deals: { include: { stage: { select: { name: true, color: true } } }, orderBy: { createdAt: "desc" } },
+      deals: {
+        where: { id: { in: dealIds } },
+        include: { stage: { select: { name: true, color: true } } },
+        orderBy: { createdAt: "desc" },
+      },
       notes: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
-      _count: { select: { contacts: true, deals: true } },
+      _count: {
+        select: { contacts: { where: { id: { in: contactIds } } }, deals: { where: { id: { in: dealIds } } } },
+      },
     },
   });
   if (!company) notFound();
@@ -93,7 +108,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
       >
         <ArrowLeft className="size-4" /> Back to companies
       </Link>
-      <CompanyHeader company={row} />
+      <CompanyHeader company={row} canEdit={canEdit} canDelete={canDelete} />
       <div className="grid gap-4 md:gap-6 lg:grid-cols-12">
         <div className="space-y-4 lg:col-span-8">
           <Tabs defaultValue="contacts">

@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import Link from "next/link";
 
-import type { Role } from "@prisma/client";
+import type { WorkspaceRole } from "@prisma/client";
 import { CircleUser, EllipsisVertical, LoaderCircle, LogOut, Settings } from "lucide-react";
 import type { Session } from "next-auth";
 import { signOut, useSession } from "next-auth/react";
@@ -23,7 +23,8 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem, useSidebar } from "@/c
 import { Skeleton } from "@/components/ui/skeleton";
 import { getInitials } from "@/lib/utils";
 
-const roleLabels: Record<Session["user"]["role"], string> = {
+const roleLabels: Record<WorkspaceRole, string> = {
+  OWNER: "Owner",
   ADMIN: "Admin",
   MANAGER: "Manager",
   MEMBER: "Member",
@@ -41,7 +42,13 @@ function UserAvatar({ user }: { user: Session["user"] }) {
   );
 }
 
-export function NavUser({ variant = "sidebar", currentRole }: { variant?: "sidebar" | "header"; currentRole: Role }) {
+export function NavUser({
+  variant = "sidebar",
+  currentRole,
+}: {
+  variant?: "sidebar" | "header";
+  currentRole: WorkspaceRole;
+}) {
   const { data: session, status } = useSession();
   const { isMobile, setOpenMobile } = useSidebar();
   const [isSigningOut, setIsSigningOut] = useState(false);

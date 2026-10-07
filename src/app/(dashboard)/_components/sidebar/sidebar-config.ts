@@ -1,12 +1,14 @@
 import {
   BarChart3,
+  Bell,
   Building2,
   CalendarDays,
   DollarSign,
   GitBranch,
   LayoutDashboard,
+  Mail,
   type LucideIcon,
-  Settings,
+  ScrollText,
   UserCog,
   Users,
 } from "lucide-react";
@@ -24,12 +26,16 @@ export const sidebarNav = {
     { title: "Companies", url: "/dashboard/companies", icon: Building2 },
     { title: "Deals", url: "/dashboard/deals", icon: DollarSign },
     { title: "Activities", url: "/dashboard/activities", icon: CalendarDays },
+    { title: "Notifications", url: "/dashboard/notifications", icon: Bell },
+    { title: "Mail", url: "/dashboard/mail", icon: Mail },
   ],
   analytics: [{ title: "Reports", url: "/dashboard/analytics", icon: BarChart3 }],
   settings: [
-    { title: "General", url: "/dashboard/settings", icon: Settings },
     { title: "Team & Roles", url: "/dashboard/settings/team", icon: UserCog },
     { title: "Pipeline", url: "/dashboard/settings/pipeline", icon: GitBranch },
+    { title: "Workspace", url: "/dashboard/settings/workspace", icon: Building2 },
+    { title: "Audit Log", url: "/dashboard/settings/audit-log", icon: ScrollText },
+    { title: "Email Settings", url: "/dashboard/settings/email", icon: Mail },
   ],
 } as const satisfies Record<string, readonly SidebarNavItem[]>;
 

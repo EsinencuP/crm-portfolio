@@ -2,7 +2,9 @@ import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { Prisma, User as PrismaUser } from "@prisma/client";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
 
+// biome-ignore lint/suspicious/noImportCycles: Audit request actor is loaded after Prisma initialization.
 import { prisma } from "@/lib/prisma";
+import { defaultPipelineStages } from "@/lib/workspace-defaults";
 
 const userFields = {
   id: true,
@@ -30,13 +32,21 @@ export function CRMPrismaAdapter(): Adapter {
     ...PrismaAdapter(prisma),
     async createUser(user) {
       const email = user.email.trim().toLowerCase();
-      const created = await prisma.user.create({
-        data: {
-          email,
-          name: user.name ?? email,
-          avatarUrl: user.image ?? user.avatarUrl ?? null,
-        },
-        select: userFields,
+      const created = await prisma.$transaction(async (tx) => {
+        const account = await tx.user.create({
+          data: { email, name: user.name ?? email, avatarUrl: user.image ?? user.avatarUrl ?? null },
+          select: userFields,
+        });
+        const workspace = await tx.workspace.create({
+          data: { name: `${account.name}'s Workspace`, slug: `personal-${account.id}` },
+        });
+        await tx.workspaceMember.create({
+          data: { userId: account.id, workspaceId: workspace.id, role: "OWNER", isDefault: true },
+        });
+        await tx.pipelineStage.createMany({
+          data: defaultPipelineStages.map((stage) => ({ ...stage, workspaceId: workspace.id })),
+        });
+        return account;
       });
       return toAdapterUser(created);
     },

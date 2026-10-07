@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createDealSchema } from "@/lib/validations/deal";
+import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -31,6 +33,8 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to view deals." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
 
   const params = new URL(request.url).searchParams;
   const parsed = querySchema.safeParse({
@@ -53,6 +57,8 @@ export async function GET(request: Request) {
 
   const { page, limit, search, stageId, contactId, companyId, ownerId, priority, sortBy, sortOrder } = parsed.data;
   const where: Prisma.DealWhereInput = {
+    workspaceId: member.workspaceId,
+    id: { in: await getAccessibleEntityIds(user.id, "Deal", member.workspaceId) },
     ...(search && { title: { contains: search, mode: "insensitive" } }),
     ...(stageId && { stageId }),
     ...(contactId && { contactId }),
@@ -83,7 +89,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to create deals." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json")
     return Response.json({ error: "Please send JSON." }, { status: 415, headers });
 
@@ -100,7 +108,17 @@ export async function POST(request: Request) {
       { status: 400, headers },
     );
   try {
-    const deal = await prisma.deal.create({ data: parsed.data, include: dealInclude });
+    if (
+      (parsed.data.contactId && !(await canAccess(user.id, "Contact", parsed.data.contactId, "VIEW"))) ||
+      (parsed.data.companyId && !(await canAccess(user.id, "Company", parsed.data.companyId, "VIEW")))
+    )
+      return Response.json({ error: "Related record is not accessible." }, { status: 403, headers });
+    if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
+      return Response.json({ error: "Related record is outside this workspace." }, { status: 400, headers });
+    const deal = await prisma.deal.create({
+      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
+      include: dealInclude,
+    });
     return Response.json(deal, { status: 201, headers });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003")

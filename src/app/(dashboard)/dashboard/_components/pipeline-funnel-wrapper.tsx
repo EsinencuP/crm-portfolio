@@ -4,23 +4,30 @@ import { connection } from "next/server";
 
 import { Prisma } from "@prisma/client";
 
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 import { PipelineFunnel, type PipelineFunnelDatum } from "./pipeline-funnel";
 
 export async function PipelineFunnelWrapper() {
   await connection();
+  const member = await requireActiveWorkspaceMember();
+  const dealIds = await getAccessibleEntityIds(member.userId, "Deal", member.workspaceId);
 
   const stagesQuery = prisma.pipelineStage.findMany({
+    where: { workspaceId: member.workspaceId },
     select: { id: true, name: true, color: true },
     orderBy: [{ position: "asc" }, { id: "asc" }],
   });
   const totalsQuery = prisma.deal.groupBy({
+    where: { workspaceId: member.workspaceId, id: { in: dealIds } },
     by: ["stageId"],
     _count: { _all: true },
     _sum: { value: true },
   });
   const currencyTotalsQuery = prisma.deal.groupBy({
+    where: { workspaceId: member.workspaceId, id: { in: dealIds } },
     by: ["stageId", "currency"],
     _sum: { value: true },
     orderBy: { currency: "asc" },

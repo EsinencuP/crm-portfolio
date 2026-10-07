@@ -3,8 +3,9 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft } from "lucide-react";
 
-import { requireAuth } from "@/lib/auth-utils";
+import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 import type { ContactRow } from "../_components/contacts-columns";
 import { AiBriefCard } from "./_components/ai-brief-card";
@@ -16,21 +17,37 @@ import { ContactTimeline, type TimelineEvent } from "./_components/contact-timel
 export const dynamic = "force-dynamic";
 
 export default async function ContactPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAuth();
+  const member = await requireActiveWorkspaceMember();
   const { id } = await params;
+  if (!(await canAccess(member.userId, "Contact", id, "VIEW"))) notFound();
+  const [canEdit, canShare, dealIds] = await Promise.all([
+    canAccess(member.userId, "Contact", id, "EDIT"),
+    canAccess(member.userId, "Contact", id, "FULL"),
+    getAccessibleEntityIds(member.userId, "Deal", member.workspaceId),
+  ]);
   const contact = await prisma.contact.findUnique({
-    where: { id },
+    where: { id, workspaceId: member.workspaceId },
     include: {
       company: { select: { id: true, name: true } },
       owner: { select: { id: true, name: true, email: true, avatarUrl: true, role: true } },
       tags: true,
-      deals: { include: { stage: { select: { name: true, color: true } } }, orderBy: { createdAt: "desc" } },
+      deals: {
+        where: { id: { in: dealIds } },
+        include: { stage: { select: { name: true, color: true } } },
+        orderBy: { createdAt: "desc" },
+      },
       activities: { include: { owner: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
       notes: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "desc" } },
-      _count: { select: { deals: true, activities: true } },
+      _count: { select: { deals: { where: { id: { in: dealIds } } }, activities: true } },
     },
   });
   if (!contact) notFound();
+
+  const emails = await prisma.emailMessage.findMany({
+    where: { workspaceId: member.workspaceId, contactId: id, account: { userId: member.userId } },
+    select: { id: true, direction: true, subject: true, snippet: true, from: true, receivedAt: true, sentAt: true, createdAt: true },
+    orderBy: { createdAt: "desc" }, take: 50,
+  });
 
   const row: ContactRow = {
     id: contact.id,
@@ -65,6 +82,14 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     tags: contact.tags.map(({ id, name, color }) => ({ id, name, color })),
   };
   const events: TimelineEvent[] = [
+    ...emails.map((email) => ({
+      id: `email-${email.id}`,
+      type: "EMAIL" as const,
+      title: `${email.direction === "INBOUND" ? "Received" : "Sent"}: ${email.subject}`,
+      description: email.snippet,
+      actor: email.direction === "INBOUND" ? email.from : null,
+      createdAt: (email.receivedAt ?? email.sentAt ?? email.createdAt).toISOString(),
+    })),
     ...contact.activities.map((activity) => ({
       id: `activity-${activity.id}`,
       type: activity.type,
@@ -99,15 +124,15 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       >
         <ArrowLeft className="size-4" /> Back to contacts
       </Link>
-      <ContactHeader contact={row} />
+      <ContactHeader contact={row} canEdit={canEdit} canShare={canShare} />
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
         <div className="space-y-4 md:space-y-6 lg:col-span-8">
           <AiBriefCard contactId={contact.id} />
-          <ContactTimeline contactId={contact.id} events={events} />
-          <ContactDeals contactId={contact.id} deals={deals} />
+          <ContactTimeline contactId={contact.id} events={events} canEdit={canEdit} />
+          <ContactDeals contactId={contact.id} deals={deals} canEdit={canEdit} />
         </div>
         <aside className="lg:col-span-4">
-          <ContactDetailsSidebar contact={details} />
+          <ContactDetailsSidebar contact={details} canEdit={canEdit} canShare={canShare} />
         </aside>
       </div>
     </div>

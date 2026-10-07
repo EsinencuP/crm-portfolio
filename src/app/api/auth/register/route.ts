@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { registrationSchema } from "@/lib/validations/registration";
+import { defaultPipelineStages } from "@/lib/workspace-defaults";
 
 export const runtime = "nodejs";
 
@@ -35,7 +36,18 @@ export async function POST(request: Request) {
     if (existingUser) return emailConflict();
 
     const passwordHash = await hash(password, 12);
-    await prisma.user.create({ data: { name, email, passwordHash }, select: { id: true } });
+    await prisma.$transaction(async (tx) => {
+      const user = await tx.user.create({ data: { name, email, passwordHash }, select: { id: true } });
+      const workspace = await tx.workspace.create({
+        data: { name: `${name}'s Workspace`, slug: `personal-${user.id}` },
+      });
+      await tx.workspaceMember.create({
+        data: { userId: user.id, workspaceId: workspace.id, role: "OWNER", isDefault: true },
+      });
+      await tx.pipelineStage.createMany({
+        data: defaultPipelineStages.map((stage) => ({ ...stage, workspaceId: workspace.id })),
+      });
+    });
 
     return Response.json({ success: true }, { status: 201 });
   } catch (error) {

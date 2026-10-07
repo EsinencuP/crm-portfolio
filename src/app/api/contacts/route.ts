@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createContactSchema } from "@/lib/validations/contact";
+import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -52,6 +54,8 @@ function contactWriteError(error: unknown) {
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to view contacts." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
 
   const params = new URL(request.url).searchParams;
   const query = querySchema.safeParse({
@@ -75,6 +79,8 @@ export async function GET(request: Request) {
   const { page, limit, search, status, source, ownerId, companyId, sortBy, sortOrder } = query.data;
   const terms = search?.split(/\s+/).filter(Boolean) ?? [];
   const where: Prisma.ContactWhereInput = {
+    workspaceId: member.workspaceId,
+    id: { in: await getAccessibleEntityIds(user.id, "Contact", member.workspaceId) },
     status: status ? { in: status } : { not: "ARCHIVED" },
     ...(source && { source: { in: source } }),
     ...(ownerId && { ownerId }),
@@ -118,7 +124,7 @@ export async function GET(request: Request) {
         }),
         prisma.contact.count({ where }),
         prisma.user.findMany({
-          where: { contacts: { some: {} } },
+          where: { workspaceMembers: { some: { workspaceId: member.workspaceId } } },
           select: ownerSelect,
           orderBy: [{ name: "asc" }, { id: "asc" }],
         }),
@@ -135,7 +141,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to create contacts." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
     return Response.json({ error: "Please send contact details as JSON." }, { status: 415, headers });
@@ -157,7 +165,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const contact = await prisma.contact.create({ data: parsed.data, include: contactInclude });
+    if (parsed.data.companyId && !(await canAccess(user.id, "Company", parsed.data.companyId, "VIEW")))
+      return Response.json({ error: "Related company is not accessible." }, { status: 403, headers });
+    if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
+      return Response.json({ error: "Company or owner is outside this workspace." }, { status: 400, headers });
+    const contact = await prisma.contact.create({
+      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
+      include: contactInclude,
+    });
     return Response.json(contact, { status: 201, headers });
   } catch (error) {
     return contactWriteError(error);

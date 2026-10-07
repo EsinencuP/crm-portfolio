@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { CalendarDays, Mail, Pencil, Phone } from "lucide-react";
 import { toast } from "sonner";
 
+import { ShareButton } from "@/components/share-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,15 @@ import { ContactFormSheet } from "../../_components/contact-form-sheet";
 import type { ContactRow } from "../../_components/contacts-columns";
 import { EmailDraftDialog } from "./email-draft-dialog";
 
-export function ContactHeader({ contact }: { contact: ContactRow }) {
+export function ContactHeader({
+  contact,
+  canEdit,
+  canShare,
+}: {
+  contact: ContactRow;
+  canEdit: boolean;
+  canShare: boolean;
+}) {
   const router = useRouter();
   const [editOpen, setEditOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
@@ -89,7 +98,7 @@ export function ContactHeader({ contact }: { contact: ContactRow }) {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <EmailDraftDialog contactId={contact.id} />
+            <EmailDraftDialog contactId={contact.id} contactEmail={contact.email} canSend={canEdit} />
             <Button
               nativeButton={false}
               variant="outline"
@@ -108,12 +117,17 @@ export function ContactHeader({ contact }: { contact: ContactRow }) {
             >
               <Phone aria-hidden="true" /> Call
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)}>
-              <CalendarDays aria-hidden="true" /> Schedule
-            </Button>
-            <Button size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil aria-hidden="true" /> Edit
-            </Button>
+            {canShare && <ShareButton entityType="Contact" entityId={contact.id} />}
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={() => setScheduleOpen(true)}>
+                <CalendarDays aria-hidden="true" /> Schedule
+              </Button>
+            )}
+            {canEdit && (
+              <Button size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil aria-hidden="true" /> Edit
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

@@ -2,8 +2,11 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { createNotification } from "@/lib/notifications";
+import { activityAccessWhere, canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createActivitySchema } from "@/lib/validations/activity";
+import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
@@ -26,6 +29,8 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
   const params = new URL(request.url).searchParams;
   const query = querySchema.safeParse(
     Object.fromEntries(
@@ -37,6 +42,7 @@ export async function GET(request: Request) {
   if (!query.success) return Response.json({ error: "Invalid activity filters." }, { status: 400, headers });
   const { page, limit, start, end, completed, contactId, dealId, ownerId } = query.data;
   const where: Prisma.ActivityWhereInput = {
+    ...(await activityAccessWhere(user.id, member.workspaceId)),
     ...(completed !== undefined && { completed: completed === "true" }),
     ...(contactId && { contactId }),
     ...(dealId && { dealId }),
@@ -63,7 +69,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
   let body: unknown;
   try {
     body = await request.json();
@@ -77,10 +85,28 @@ export async function POST(request: Request) {
       { status: 400, headers },
     );
   try {
+    if (!(await belongsToWorkspace(member.workspaceId, { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id })))
+      return Response.json({ error: "Related record is outside this workspace." }, { status: 400, headers });
+    if (
+      (parsed.data.contactId && !(await canAccess(user.id, "Contact", parsed.data.contactId, "EDIT"))) ||
+      (parsed.data.dealId && !(await canAccess(user.id, "Deal", parsed.data.dealId, "EDIT")))
+    )
+      return Response.json({ error: "Access denied." }, { status: 403, headers });
     const activity = await prisma.activity.create({
-      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id },
+      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
       include,
     });
+    if (activity.type === "TASK" && activity.ownerId !== user.id) {
+      await createNotification({
+        type: "TASK_ASSIGNED",
+        title: "Task assigned to you",
+        body: activity.title,
+        link: "/dashboard/activities",
+        userId: activity.ownerId,
+        workspaceId: member.workspaceId,
+        metadata: { entityType: "Activity", entityId: activity.id },
+      }).catch(() => console.error("Unable to create task assignment notification."));
+    }
     return Response.json(activity, { status: 201, headers });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2003")

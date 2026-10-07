@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { REVENUE_PERIODS, type RevenueChartData, type RevenueMonth, type RevenuePeriod } from "@/lib/revenue-types";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -36,6 +38,8 @@ export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) return Response.json({ error: "Please sign in to view revenue." }, { status: 401, headers });
+    const member = await getActiveWorkspaceMember(user.id);
+    if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
 
     const params = new URL(request.url).searchParams;
     const query = querySchema.safeParse({
@@ -48,11 +52,17 @@ export async function GET(request: Request) {
     const now = new Date();
     const from = periodStart(query.data.period, now);
     const yearStart = periodStart("12m", now);
+    const dealIds = await getAccessibleEntityIds(user.id, "Deal", member.workspaceId);
     const { currency, currencies, totals } = await prisma.$transaction(
       async (transaction) => {
         const groups = await transaction.deal.groupBy({
           by: ["currency"],
-          where: { ...closedStage, closeDate: { gte: yearStart, lte: now } },
+          where: {
+            workspaceId: member.workspaceId,
+            id: { in: dealIds },
+            ...closedStage,
+            closeDate: { gte: yearStart, lte: now },
+          },
         });
         const available = [
           ...new Set(groups.map(({ currency: code }) => code.trim().toUpperCase() || "UNKNOWN")),
@@ -71,6 +81,8 @@ export async function GET(request: Request) {
           FROM "Deal" d
           JOIN "PipelineStage" s ON s."id" = d."stageId"
           WHERE LOWER(s."name") IN ('closed won', 'closed lost')
+            AND d."workspaceId" = ${member.workspaceId}
+            AND d."id" IN (${Prisma.join(dealIds.length ? dealIds : ["__no_accessible_deals__"])})
             AND d."closeDate" >= (${from}::timestamptz AT TIME ZONE 'UTC')
             AND d."closeDate" <= (${now}::timestamptz AT TIME ZONE 'UTC')
             AND COALESCE(NULLIF(UPPER(BTRIM(d."currency")), ''), 'UNKNOWN') = ${currency}

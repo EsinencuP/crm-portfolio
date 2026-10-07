@@ -30,7 +30,15 @@ const icons = {
   FOLLOW_UP: CalendarDays,
 };
 
-export function ContactTimeline({ contactId, events }: { contactId: string; events: TimelineEvent[] }) {
+export function ContactTimeline({
+  contactId,
+  events,
+  canEdit,
+}: {
+  contactId: string;
+  events: TimelineEvent[];
+  canEdit: boolean;
+}) {
   const router = useRouter();
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
@@ -63,20 +71,22 @@ export function ContactTimeline({ contactId, events }: { contactId: string; even
         <CardTitle>Timeline</CardTitle>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="space-y-3">
-          <Textarea
-            aria-label="Add a note"
-            placeholder="Add a note about this contact..."
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            maxLength={10000}
-          />
-          <div className="flex justify-end">
-            <Button size="sm" onClick={addNote} disabled={saving || !note.trim()}>
-              {saving ? "Saving..." : "Add a note"}
-            </Button>
+        {canEdit && (
+          <div className="space-y-3">
+            <Textarea
+              aria-label="Add a note"
+              placeholder="Add a note about this contact..."
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={10000}
+            />
+            <div className="flex justify-end">
+              <Button size="sm" onClick={addNote} disabled={saving || !note.trim()}>
+                {saving ? "Saving..." : "Add a note"}
+              </Button>
+            </div>
           </div>
-        </div>
+        )}
         {events.length === 0 ? (
           <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground text-sm">
             No activity yet. Add a note to start the timeline.

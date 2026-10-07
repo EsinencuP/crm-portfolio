@@ -1,8 +1,10 @@
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import type { CrmSearchResults } from "@/lib/search-types";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -13,6 +15,8 @@ export async function GET(request: Request) {
   try {
     const user = await getCurrentUser();
     if (!user?.id) return Response.json({ error: "Please sign in to search." }, { status: 401, headers });
+    const member = await getActiveWorkspaceMember(user.id);
+    if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
 
     const query = querySchema.safeParse(new URL(request.url).searchParams.get("q") ?? "");
     if (!query.success)
@@ -23,9 +27,16 @@ export async function GET(request: Request) {
     }
 
     const terms = query.data.split(/\s+/).map((contains) => ({ contains, mode: "insensitive" as const }));
+    const [contactIds, companyIds, dealIds] = await Promise.all([
+      getAccessibleEntityIds(user.id, "Contact", member.workspaceId),
+      getAccessibleEntityIds(user.id, "Company", member.workspaceId),
+      getAccessibleEntityIds(user.id, "Deal", member.workspaceId),
+    ]);
     const [contacts, companies, deals] = await Promise.all([
       prisma.contact.findMany({
         where: {
+          workspaceId: member.workspaceId,
+          id: { in: contactIds },
           AND: terms.map((term) => ({
             OR: [
               { firstName: term },
@@ -48,13 +59,19 @@ export async function GET(request: Request) {
         take: 5,
       }),
       prisma.company.findMany({
-        where: { AND: terms.map((term) => ({ OR: [{ name: term }, { domain: term }, { industry: term }] })) },
+        where: {
+          workspaceId: member.workspaceId,
+          id: { in: companyIds },
+          AND: terms.map((term) => ({ OR: [{ name: term }, { domain: term }, { industry: term }] })),
+        },
         select: { id: true, name: true, domain: true, industry: true },
         orderBy: [{ name: "asc" }, { id: "asc" }],
         take: 5,
       }),
       prisma.deal.findMany({
         where: {
+          workspaceId: member.workspaceId,
+          id: { in: dealIds },
           AND: terms.map((term) => ({
             OR: [{ title: term }, { company: { name: term } }, { stage: { name: term } }],
           })),

@@ -9,8 +9,9 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { requireAuth } from "@/lib/auth-utils";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 function formatValue(value: { toNumber(): number } | null, currency: string) {
   if (!value) return "—";
@@ -36,9 +37,11 @@ function initials(name: string) {
 }
 
 export async function RecentDeals() {
-  await requireAuth();
+  const member = await requireActiveWorkspaceMember();
+  const dealIds = await getAccessibleEntityIds(member.userId, "Deal", member.workspaceId);
 
   const deals = await prisma.deal.findMany({
+    where: { workspaceId: member.workspaceId, id: { in: dealIds } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: 10,
     include: {

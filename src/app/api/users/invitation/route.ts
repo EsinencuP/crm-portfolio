@@ -55,17 +55,22 @@ export async function POST(request: Request) {
         let userId: string;
         if (existing) {
           if (current?.email !== invite.email) return "sign-in" as const;
-          await tx.user.update({ where: { id: existing.id }, data: { role: invite.role } });
           userId = existing.id;
         } else {
           if (!parsed.data.name || !parsed.data.password) return "details" as const;
           const passwordHash = await hash(parsed.data.password, 12);
           const created = await tx.user.create({
-            data: { email: invite.email, name: parsed.data.name, passwordHash, role: invite.role },
+            data: { email: invite.email, name: parsed.data.name, passwordHash },
             select: { id: true },
           });
           userId = created.id;
         }
+        const hasMembership = await tx.workspaceMember.count({ where: { userId } });
+        await tx.workspaceMember.upsert({
+          where: { userId_workspaceId: { userId, workspaceId: invite.workspaceId } },
+          create: { userId, workspaceId: invite.workspaceId, role: invite.role, isDefault: hasMembership === 0 },
+          update: { role: invite.role },
+        });
         await tx.teamInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } });
         return { userId, email: invite.email, existingUser: !!existing };
       },

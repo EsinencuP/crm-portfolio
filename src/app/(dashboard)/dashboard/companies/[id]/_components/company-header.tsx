@@ -25,7 +25,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CompanyLogo, type CompanyRow } from "../../_components/companies-columns";
 import { CompanyFormSheet } from "../../_components/company-form-sheet";
 
-export function CompanyHeader({ company }: { company: CompanyRow }) {
+export function CompanyHeader({
+  company,
+  canEdit,
+  canDelete,
+}: {
+  company: CompanyRow;
+  canEdit: boolean;
+  canDelete: boolean;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
@@ -74,12 +82,16 @@ export function CompanyHeader({ company }: { company: CompanyRow }) {
                 <ExternalLink aria-hidden="true" /> Website
               </Button>
             )}
-            <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
-              <Pencil aria-hidden="true" /> Edit
-            </Button>
-            <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
-              <Trash2 aria-hidden="true" /> Delete
-            </Button>
+            {canEdit && (
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)}>
+                <Pencil aria-hidden="true" /> Edit
+              </Button>
+            )}
+            {canDelete && (
+              <Button variant="destructive" size="sm" onClick={() => setDeleteOpen(true)}>
+                <Trash2 aria-hidden="true" /> Delete
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

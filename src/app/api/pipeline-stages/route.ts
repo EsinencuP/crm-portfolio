@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma } from "@/lib/prisma";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -20,8 +21,11 @@ function canManage(role: string) {
 export async function GET() {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to view pipeline stages." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
   try {
     const stages = await prisma.pipelineStage.findMany({
+      where: { workspaceId: member.workspaceId },
       orderBy: [{ position: "asc" }, { id: "asc" }],
       include: { _count: { select: { deals: true } } },
     });
@@ -34,7 +38,9 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Please sign in." }, { status: 401, headers });
-  if (!canManage(user.role)) return Response.json({ error: "Manager access required." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (!canManage(member.role)) return Response.json({ error: "Manager access required." }, { status: 403, headers });
   let body: unknown;
   try {
     body = await request.json();
@@ -44,13 +50,16 @@ export async function POST(request: Request) {
   const parsed = stageSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid stage details." }, { status: 400, headers });
   const existing = await prisma.pipelineStage.findFirst({
-    where: { name: { equals: parsed.data.name, mode: "insensitive" } },
+    where: { workspaceId: member.workspaceId, name: { equals: parsed.data.name, mode: "insensitive" } },
     select: { id: true },
   });
   if (existing) return Response.json({ error: "A stage with this name already exists." }, { status: 409, headers });
-  const last = await prisma.pipelineStage.aggregate({ _max: { position: true } });
+  const last = await prisma.pipelineStage.aggregate({
+    where: { workspaceId: member.workspaceId },
+    _max: { position: true },
+  });
   const stage = await prisma.pipelineStage.create({
-    data: { ...parsed.data, position: (last._max.position ?? -1) + 1 },
+    data: { ...parsed.data, workspaceId: member.workspaceId, position: (last._max.position ?? -1) + 1 },
   });
   return Response.json({ stage }, { status: 201, headers });
 }
@@ -58,7 +67,9 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Please sign in." }, { status: 401, headers });
-  if (!canManage(user.role)) return Response.json({ error: "Manager access required." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (!canManage(member.role)) return Response.json({ error: "Manager access required." }, { status: 403, headers });
   let body: unknown;
   try {
     body = await request.json();
@@ -74,15 +85,19 @@ export async function PUT(request: Request) {
     return Response.json({ error: "Stage IDs and names must be unique." }, { status: 400, headers });
   try {
     const saved = await prisma.$transaction(async (tx) => {
-      const current = await tx.pipelineStage.findMany({ select: { id: true } });
+      const current = await tx.pipelineStage.findMany({
+        where: { workspaceId: member.workspaceId },
+        select: { id: true },
+      });
       if (current.length !== stages.length || current.some((stage) => !ids.includes(stage.id))) return null;
       for (const [position, stage] of stages.entries()) {
         await tx.pipelineStage.update({
-          where: { id: stage.id },
+          where: { id: stage.id, workspaceId: member.workspaceId },
           data: { name: stage.name, color: stage.color, probability: stage.probability, position },
         });
       }
       return tx.pipelineStage.findMany({
+        where: { workspaceId: member.workspaceId },
         orderBy: [{ position: "asc" }, { id: "asc" }],
         include: { _count: { select: { deals: true } } },
       });

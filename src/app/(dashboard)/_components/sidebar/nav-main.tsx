@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import type { Role } from "@prisma/client";
+import type { WorkspaceRole } from "@prisma/client";
 
 import {
   SidebarGroup,
@@ -17,14 +17,25 @@ import {
 
 import { type SidebarNavGroup, sidebarGroups } from "./sidebar-config";
 
-export function NavMain({ role, groups = sidebarGroups }: { role: Role; groups?: readonly SidebarNavGroup[] }) {
+export function NavMain({
+  role,
+  groups = sidebarGroups,
+}: {
+  role: WorkspaceRole;
+  groups?: readonly SidebarNavGroup[];
+}) {
   const pathname = usePathname();
   const { isMobile, setOpenMobile } = useSidebar();
   const visibleGroups = groups
-    .filter((group) => group.id !== "settings" || role === "ADMIN" || role === "MANAGER")
+    .filter((group) => group.id !== "settings" || role === "OWNER" || role === "ADMIN" || role === "MANAGER")
     .map((group) =>
       group.id === "settings" && role === "MANAGER"
-        ? { ...group, items: group.items.filter((item) => item.url !== "/dashboard/settings") }
+        ? {
+            ...group,
+            items: group.items.filter(
+              (item) => !["/dashboard/settings", "/dashboard/settings/workspace"].includes(item.url),
+            ),
+          }
         : group,
     );
   const activeItem = visibleGroups

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { z } from "zod";
 
+import { ShareButton } from "@/components/share-dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,7 +27,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { requireAuth } from "@/lib/auth-utils";
+import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getActiveWorkspaceMember, requireActiveWorkspaceMember } from "@/lib/workspace";
 
 import type { KanbanDeal } from "../_components/deal-card";
 import { DealEditButton } from "../_components/deal-form-sheet";
@@ -62,11 +65,16 @@ function formatDealValue(value: string | null, currency: string) {
 }
 
 export default async function DealPage({ params }: { params: Promise<{ id: string }> }) {
-  const _user = await requireAuth();
+  const member = await requireActiveWorkspaceMember();
   const { id } = await params;
+  if (!(await canAccess(member.userId, "Deal", id, "VIEW"))) notFound();
+  const [canEdit, canShare] = await Promise.all([
+    canAccess(member.userId, "Deal", id, "EDIT"),
+    canAccess(member.userId, "Deal", id, "FULL"),
+  ]);
   const [deal, stages] = await Promise.all([
     prisma.deal.findUnique({
-      where: { id },
+      where: { id, workspaceId: member.workspaceId },
       include: {
         stage: true,
         contact: { select: { id: true, firstName: true, lastName: true, email: true } },
@@ -76,24 +84,41 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
         notes: { include: { author: { select: { name: true } } }, orderBy: { createdAt: "desc" }, take: 50 },
       },
     }),
-    prisma.pipelineStage.findMany({ orderBy: [{ position: "asc" }, { id: "asc" }] }),
+    prisma.pipelineStage.findMany({
+      where: { workspaceId: member.workspaceId },
+      orderBy: [{ position: "asc" }, { id: "asc" }],
+    }),
   ]);
   if (!deal) notFound();
 
   async function addNote(formData: FormData) {
     "use server";
     const current = await requireAuth();
-    if (current.role === "VIEWER") forbidden();
+    const active = await getActiveWorkspaceMember(current.id);
+    if (!active || !(await canAccess(current.id, "Deal", id, "EDIT"))) forbidden();
+    const target = await prisma.deal.findUnique({
+      where: { id, workspaceId: active.workspaceId },
+      select: { id: true },
+    });
+    if (!target) notFound();
     const content = noteSchema.safeParse(formData.get("content"));
     if (!content.success) return;
-    await prisma.note.create({ data: { dealId: id, authorId: current.id, content: content.data } });
+    await prisma.note.create({
+      data: { dealId: id, authorId: current.id, content: content.data, workspaceId: active.workspaceId },
+    });
     revalidatePath(`/dashboard/deals/${id}`);
   }
 
   async function addActivity(formData: FormData) {
     "use server";
     const current = await requireAuth();
-    if (current.role === "VIEWER") forbidden();
+    const active = await getActiveWorkspaceMember(current.id);
+    if (!active || !(await canAccess(current.id, "Deal", id, "EDIT"))) forbidden();
+    const target = await prisma.deal.findUnique({
+      where: { id, workspaceId: active.workspaceId },
+      select: { id: true },
+    });
+    if (!target) notFound();
     const values = activitySchema.safeParse({
       type: formData.get("type"),
       title: formData.get("title"),
@@ -104,6 +129,7 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
     const { type, title, description, dueDate } = values.data;
     await prisma.activity.create({
       data: {
+        workspaceId: active.workspaceId,
         dealId: id,
         ownerId: current.id,
         type,
@@ -177,7 +203,10 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
             {deal.contact && `· ${deal.contact.firstName} ${deal.contact.lastName}`}
           </p>
         </div>
-        <DealEditButton deal={row} stages={stages} />
+        <div className="flex items-center gap-2">
+          {canShare && <ShareButton entityType="Deal" entityId={deal.id} />}
+          {canEdit && <DealEditButton deal={row} stages={stages} />}
+        </div>
       </div>
       <Card>
         <CardHeader>
@@ -245,20 +274,22 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
               <CardTitle>Timeline</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <form action={addNote} className="space-y-2">
-                <Label htmlFor="deal-note">Add a note</Label>
-                <Textarea
-                  id="deal-note"
-                  name="content"
-                  required
-                  maxLength={5000}
-                  rows={3}
-                  placeholder="Write a note about this deal…"
-                />
-                <Button type="submit" size="sm">
-                  <MessageSquare className="size-4" /> Save note
-                </Button>
-              </form>
+              {canEdit && (
+                <form action={addNote} className="space-y-2">
+                  <Label htmlFor="deal-note">Add a note</Label>
+                  <Textarea
+                    id="deal-note"
+                    name="content"
+                    required
+                    maxLength={5000}
+                    rows={3}
+                    placeholder="Write a note about this deal…"
+                  />
+                  <Button type="submit" size="sm">
+                    <MessageSquare className="size-4" /> Save note
+                  </Button>
+                </form>
+              )}
               <div className="border-t pt-5">
                 {events.length === 0 ? (
                   <p className="text-muted-foreground text-sm">No activity yet.</p>
@@ -294,45 +325,47 @@ export default async function DealPage({ params }: { params: Promise<{ id: strin
               </div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
-              <CardTitle>Add activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form action={addActivity} className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="activity-type">Type</Label>
-                  <select
-                    id="activity-type"
-                    name="type"
-                    className="h-9 w-full rounded-md border bg-background px-3 text-sm"
-                    defaultValue="TASK"
-                  >
-                    <option value="TASK">Task</option>
-                    <option value="CALL">Call</option>
-                    <option value="EMAIL">Email</option>
-                    <option value="MEETING">Meeting</option>
-                    <option value="FOLLOW_UP">Follow up</option>
-                  </select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="activity-due">Due date</Label>
-                  <Input id="activity-due" name="dueDate" type="date" />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="activity-title">Title *</Label>
-                  <Input id="activity-title" name="title" required maxLength={200} />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label htmlFor="activity-description">Description</Label>
-                  <Textarea id="activity-description" name="description" maxLength={5000} rows={3} />
-                </div>
-                <Button type="submit" size="sm" className="w-fit">
-                  Add activity
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+          {canEdit && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Add activity</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form action={addActivity} className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="activity-type">Type</Label>
+                    <select
+                      id="activity-type"
+                      name="type"
+                      className="h-9 w-full rounded-md border bg-background px-3 text-sm"
+                      defaultValue="TASK"
+                    >
+                      <option value="TASK">Task</option>
+                      <option value="CALL">Call</option>
+                      <option value="EMAIL">Email</option>
+                      <option value="MEETING">Meeting</option>
+                      <option value="FOLLOW_UP">Follow up</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="activity-due">Due date</Label>
+                    <Input id="activity-due" name="dueDate" type="date" />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="activity-title">Title *</Label>
+                    <Input id="activity-title" name="title" required maxLength={200} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label htmlFor="activity-description">Description</Label>
+                    <Textarea id="activity-description" name="description" maxLength={5000} rows={3} />
+                  </div>
+                  <Button type="submit" size="sm" className="w-fit">
+                    Add activity
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          )}
         </div>
         <aside className="space-y-4 md:space-y-6 lg:col-span-4">
           <Card>

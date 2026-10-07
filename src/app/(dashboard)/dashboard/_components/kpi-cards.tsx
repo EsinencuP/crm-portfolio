@@ -7,7 +7,9 @@ import { BriefcaseBusiness, Minus, Percent, TrendingDown, TrendingUp, Trophy, Us
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardAction, CardContent, CardDescription, CardHeader } from "@/components/ui/card";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 type Trend = {
   label: string;
@@ -84,6 +86,14 @@ function TrendBadge({ trend }: { trend: Trend }) {
 export async function KpiCards() {
   // These totals and the current month must be evaluated at request time.
   await connection();
+  const member = await requireActiveWorkspaceMember();
+  const workspaceId = member.workspaceId;
+  const [contactIds, dealIds] = await Promise.all([
+    getAccessibleEntityIds(member.userId, "Contact", workspaceId),
+    getAccessibleEntityIds(member.userId, "Deal", workspaceId),
+  ]);
+  const contactScope = { workspaceId, id: { in: contactIds } };
+  const dealScope = { workspaceId, id: { in: dealIds } };
 
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -114,27 +124,27 @@ export async function KpiCards() {
     previousNewWonDeals,
   ] = await prisma.$transaction(
     [
-      prisma.contact.count(),
-      prisma.contact.count({ where: { createdAt: thisMonth } }),
-      prisma.contact.count({ where: { createdAt: lastMonth } }),
-      prisma.deal.count({ where: activeStage }),
+      prisma.contact.count({ where: contactScope }),
+      prisma.contact.count({ where: { ...contactScope, createdAt: thisMonth } }),
+      prisma.contact.count({ where: { ...contactScope, createdAt: lastMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...activeStage } }),
       prisma.deal.groupBy({
         by: ["currency"],
-        where: activeStage,
+        where: { ...dealScope, ...activeStage },
         _sum: { value: true },
         orderBy: { currency: "asc" },
       }),
-      prisma.deal.count({ where: { ...activeStage, createdAt: thisMonth } }),
-      prisma.deal.count({ where: { ...activeStage, createdAt: lastMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...activeStage, createdAt: thisMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...activeStage, createdAt: lastMonth } }),
       // closeDate is the only closing date available; undated wins stay in the all-time total.
-      prisma.deal.count({ where: { ...wonStage, closeDate: thisMonth } }),
-      prisma.deal.count({ where: { ...wonStage, closeDate: lastMonth } }),
-      prisma.deal.count(),
-      prisma.deal.count({ where: wonStage }),
-      prisma.deal.count({ where: { createdAt: thisMonth } }),
-      prisma.deal.count({ where: { createdAt: lastMonth } }),
-      prisma.deal.count({ where: { ...wonStage, createdAt: thisMonth } }),
-      prisma.deal.count({ where: { ...wonStage, createdAt: lastMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...wonStage, closeDate: thisMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...wonStage, closeDate: lastMonth } }),
+      prisma.deal.count({ where: dealScope }),
+      prisma.deal.count({ where: { ...dealScope, ...wonStage } }),
+      prisma.deal.count({ where: { ...dealScope, createdAt: thisMonth } }),
+      prisma.deal.count({ where: { ...dealScope, createdAt: lastMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...wonStage, createdAt: thisMonth } }),
+      prisma.deal.count({ where: { ...dealScope, ...wonStage, createdAt: lastMonth } }),
     ],
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
   );

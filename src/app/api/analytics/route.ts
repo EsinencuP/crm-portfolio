@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 const querySchema = z.object({
@@ -16,6 +18,8 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in." }, { status: 401 });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409 });
   const params = new URL(request.url).searchParams;
   const parsed = querySchema.safeParse({
     from: params.get("from"),
@@ -29,10 +33,14 @@ export async function GET(request: Request) {
   if (start > end || end.getTime() - start.getTime() > 1000 * 60 * 60 * 24 * 730)
     return Response.json({ error: "Select a range of up to two years." }, { status: 400 });
   try {
+    const dealIds = await getAccessibleEntityIds(user.id, "Deal", member.workspaceId);
     const [stages, createdDeals, closedDeals, currencyRows] = await Promise.all([
-      prisma.pipelineStage.findMany({ orderBy: [{ position: "asc" }, { id: "asc" }] }),
+      prisma.pipelineStage.findMany({
+        where: { workspaceId: member.workspaceId },
+        orderBy: [{ position: "asc" }, { id: "asc" }],
+      }),
       prisma.deal.findMany({
-        where: { currency, createdAt: { gte: start, lte: end } },
+        where: { workspaceId: member.workspaceId, id: { in: dealIds }, currency, createdAt: { gte: start, lte: end } },
         select: {
           id: true,
           title: true,
@@ -44,6 +52,8 @@ export async function GET(request: Request) {
       }),
       prisma.deal.findMany({
         where: {
+          workspaceId: member.workspaceId,
+          id: { in: dealIds },
           currency,
           closeDate: { gte: start, lte: end },
           stage: { name: { in: ["Closed Won", "Closed Lost"], mode: "insensitive" } },
@@ -57,7 +67,11 @@ export async function GET(request: Request) {
           owner: { select: { id: true, name: true } },
         },
       }),
-      prisma.deal.findMany({ distinct: ["currency"], select: { currency: true } }),
+      prisma.deal.findMany({
+        where: { workspaceId: member.workspaceId, id: { in: dealIds } },
+        distinct: ["currency"],
+        select: { currency: true },
+      }),
     ]);
     const stageMap = new Map(stages.map((stage) => [stage.id, stage]));
     const pipeline = stages.map((stage) => ({

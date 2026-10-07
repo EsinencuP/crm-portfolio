@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import type { Role } from "@prisma/client";
+import type { Role, WorkspaceRole } from "@prisma/client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
@@ -33,7 +33,14 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type UserRow = { id: string; name: string; email: string; avatarUrl: string | null; role: Role; createdAt: string };
+type UserRow = {
+  id: string;
+  name: string;
+  email: string;
+  avatarUrl: string | null;
+  role: WorkspaceRole;
+  createdAt: string;
+};
 type InviteRow = { id: string; email: string; role: Role; createdAt: string; expiresAt: string };
 type TeamResponse = { users: UserRow[]; invites: InviteRow[]; total: number; page: number; totalPages: number };
 const roles: Role[] = ["ADMIN", "MANAGER", "MEMBER", "VIEWER"];
@@ -46,7 +53,7 @@ async function getTeam(page: number, search: string, signal: AbortSignal): Promi
   return body;
 }
 
-export function TeamManagement({ currentUserId, currentRole }: { currentUserId: string; currentRole: Role }) {
+export function TeamManagement({ currentUserId, currentRole }: { currentUserId: string; currentRole: WorkspaceRole }) {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -130,7 +137,9 @@ export function TeamManagement({ currentUserId, currentRole }: { currentUserId: 
         accessorKey: "role",
         header: "Role",
         cell: ({ row }) =>
-          currentRole === "ADMIN" && row.original.id !== currentUserId ? (
+          (currentRole === "OWNER" || currentRole === "ADMIN") &&
+          row.original.id !== currentUserId &&
+          row.original.role !== "OWNER" ? (
             <Select
               value={row.original.role}
               onValueChange={(value) => {
@@ -357,7 +366,10 @@ export function TeamManagement({ currentUserId, currentRole }: { currentUserId: 
                 </SelectTrigger>
                 <SelectContent>
                   {roles
-                    .filter((role) => currentRole === "ADMIN" || role === "MEMBER" || role === "VIEWER")
+                    .filter(
+                      (role) =>
+                        currentRole === "OWNER" || currentRole === "ADMIN" || role === "MEMBER" || role === "VIEWER",
+                    )
                     .map((role) => (
                       <SelectItem key={role} value={role}>
                         {role}

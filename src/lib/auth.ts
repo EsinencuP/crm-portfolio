@@ -3,7 +3,9 @@ import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 
+// biome-ignore lint/suspicious/noImportCycles: Audit request actor is loaded only when a query executes.
 import { CRMPrismaAdapter } from "@/lib/auth-adapter";
+// biome-ignore lint/suspicious/noImportCycles: Prisma client finishes initialization before the audit hook loads auth.
 import { prisma } from "@/lib/prisma";
 import { registrationSchema } from "@/lib/validations/registration";
 

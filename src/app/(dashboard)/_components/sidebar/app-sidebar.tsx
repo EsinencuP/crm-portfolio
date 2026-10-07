@@ -4,7 +4,7 @@ import { type ComponentProps, useEffect } from "react";
 
 import Link from "next/link";
 
-import type { Role } from "@prisma/client";
+import type { WorkspaceRole } from "@prisma/client";
 
 import {
   Sidebar,
@@ -22,6 +22,7 @@ import { useSidebarStore } from "@/stores/sidebar-store";
 
 import { NavMain } from "./nav-main";
 import { NavUser } from "./nav-user";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 
 // Place this provider around AppSidebar and the dashboard content so triggers share the Zustand state.
 export function AppSidebarProvider({
@@ -46,12 +47,13 @@ export function AppSidebar({
   role,
   appName,
   ...props
-}: Omit<ComponentProps<typeof Sidebar>, "collapsible" | "children"> & { role: Role; appName: string }) {
+}: Omit<ComponentProps<typeof Sidebar>, "collapsible" | "children"> & { role: WorkspaceRole; appName: string }) {
   const { isMobile, setOpenMobile } = useSidebar();
 
   return (
     <Sidebar {...props} collapsible="icon">
       <SidebarHeader>
+        <WorkspaceSwitcher />
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton

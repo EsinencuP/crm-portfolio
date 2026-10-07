@@ -3,7 +3,9 @@ import { streamText } from "ai";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -15,6 +17,8 @@ const requestSchema = z.object({
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user) return Response.json({ error: "Please sign in." }, { status: 401 });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409 });
 
   let body: unknown;
   try {
@@ -24,9 +28,11 @@ export async function POST(request: Request) {
   }
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Invalid contact or email context." }, { status: 400 });
+  if (!(await canAccess(user.id, "Contact", parsed.data.contactId, "VIEW")))
+    return Response.json({ error: "Contact not found." }, { status: 404 });
 
   const contact = await prisma.contact.findUnique({
-    where: { id: parsed.data.contactId },
+    where: { id: parsed.data.contactId, workspaceId: member.workspaceId },
     select: {
       firstName: true,
       lastName: true,

@@ -1,4 +1,5 @@
 import { requireAuth } from "@/lib/auth-utils";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 import { KpiCards } from "./_components/kpi-cards";
 import { PipelineFunnelWrapper } from "./_components/pipeline-funnel-wrapper";
@@ -7,7 +8,17 @@ import { RevenueChart } from "./_components/revenue-chart";
 import { UpcomingActivities } from "./_components/upcoming-activities";
 
 export default async function DashboardPage() {
-  await requireAuth();
+  const user = await requireAuth();
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member)
+    return (
+      <main className="rounded-xl border p-6">
+        <h1 className="font-semibold text-2xl">Create a workspace</h1>
+        <p className="mt-2 text-muted-foreground">
+          Use the workspace menu in the sidebar to create your first organization.
+        </p>
+      </main>
+    );
 
   return (
     <main className="flex min-w-0 flex-col gap-4 md:gap-6">

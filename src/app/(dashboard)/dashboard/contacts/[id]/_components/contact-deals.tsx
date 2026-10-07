@@ -31,7 +31,15 @@ export type ContactDeal = {
   stage: { name: string; color: string };
 };
 
-export function ContactDeals({ contactId, deals }: { contactId: string; deals: ContactDeal[] }) {
+export function ContactDeals({
+  contactId,
+  deals,
+  canEdit,
+}: {
+  contactId: string;
+  deals: ContactDeal[];
+  canEdit: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -89,9 +97,11 @@ export function ContactDeals({ contactId, deals }: { contactId: string; deals: C
       <Card>
         <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>Deals</CardTitle>
-          <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-            <Plus aria-hidden="true" /> Link Deal
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+              <Plus aria-hidden="true" /> Link Deal
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           {deals.length === 0 ? (

@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createCompanySchema } from "@/lib/validations/company";
+import { getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
@@ -20,6 +22,8 @@ const querySchema = z.object({
 export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to view companies." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
   const params = new URL(request.url).searchParams;
   const query = querySchema.safeParse(
     Object.fromEntries(
@@ -35,7 +39,13 @@ export async function GET(request: Request) {
       { status: 400, headers },
     );
   const { page, limit, search, industry, size, sortBy, sortOrder } = query.data;
+  const [contactIds, dealIds] = await Promise.all([
+    getAccessibleEntityIds(user.id, "Contact", member.workspaceId),
+    getAccessibleEntityIds(user.id, "Deal", member.workspaceId),
+  ]);
   const where: Prisma.CompanyWhereInput = {
+    workspaceId: member.workspaceId,
+    id: { in: await getAccessibleEntityIds(user.id, "Company", member.workspaceId) },
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -51,7 +61,11 @@ export async function GET(request: Request) {
       [
         prisma.company.findMany({
           where,
-          include: { _count: { select: { contacts: true, deals: true } } },
+          include: {
+            _count: {
+              select: { contacts: { where: { id: { in: contactIds } } }, deals: { where: { id: { in: dealIds } } } },
+            },
+          },
           orderBy: [{ [sortBy]: sortOrder }, { id: "asc" }],
           skip: (page - 1) * limit,
           take: limit,
@@ -63,7 +77,11 @@ export async function GET(request: Request) {
     const totals = companies.length
       ? await prisma.deal.groupBy({
           by: ["companyId", "currency"],
-          where: { companyId: { in: companies.map((company) => company.id) } },
+          where: {
+            workspaceId: member.workspaceId,
+            id: { in: dealIds },
+            companyId: { in: companies.map((company) => company.id) },
+          },
           _sum: { value: true },
         })
       : [];
@@ -84,7 +102,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to create companies." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json")
     return Response.json({ error: "Please send JSON." }, { status: 415, headers });
   let body: unknown;
@@ -100,7 +120,20 @@ export async function POST(request: Request) {
       { status: 400, headers },
     );
   try {
-    const company = await prisma.company.create({ data: parsed.data });
+    const company = await prisma.$transaction(async (tx) => {
+      const created = await tx.company.create({ data: { ...parsed.data, workspaceId: member.workspaceId } });
+      await tx.recordPermission.create({
+        data: {
+          entityType: "Company",
+          entityId: created.id,
+          userId: user.id,
+          grantedById: user.id,
+          workspaceId: member.workspaceId,
+          permission: "FULL",
+        },
+      });
+      return created;
+    });
     return Response.json(company, { status: 201, headers });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002")

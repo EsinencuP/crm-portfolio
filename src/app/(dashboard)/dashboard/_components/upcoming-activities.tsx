@@ -7,8 +7,9 @@ import { format, formatDistanceToNow } from "date-fns";
 import { ArrowUpRight, CalendarDays, Mail, MessageSquareText, Phone, RefreshCw, SquareCheckBig } from "lucide-react";
 
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { requireAuth } from "@/lib/auth-utils";
+import { activityAccessWhere } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 const activityIcons = {
   [ActivityType.CALL]: Phone,
@@ -20,11 +21,15 @@ const activityIcons = {
 } satisfies Record<ActivityType, typeof Phone>;
 
 export async function UpcomingActivities() {
-  await requireAuth();
+  const member = await requireActiveWorkspaceMember();
 
   const now = new Date();
   const activities = await prisma.activity.findMany({
-    where: { completed: false, dueDate: { gte: now } },
+    where: {
+      ...(await activityAccessWhere(member.userId, member.workspaceId)),
+      completed: false,
+      dueDate: { gte: now },
+    },
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
     take: 5,
     include: { contact: { select: { firstName: true, lastName: true } } },

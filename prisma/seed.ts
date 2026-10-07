@@ -7,12 +7,14 @@ import {
   type Prisma,
   PrismaClient,
   Role,
+  WorkspaceRole,
 } from "@prisma/client";
 import { hash } from "bcryptjs";
 
 loadEnvConfig(process.cwd());
 
 const prisma = new PrismaClient();
+const demoWorkspaceId = "legacy-workspace-default";
 const seedId = (kind: string, index: number) => `demo-${kind}-${String(index + 1).padStart(2, "0")}`;
 const daysFromNow = (days: number) => new Date(Date.now() + days * 86_400_000);
 
@@ -223,11 +225,20 @@ async function checkUniqueConflicts() {
   const contactEmails = contactIds.map((_, index) => `contact${String(index + 1).padStart(2, "0")}@crm-demo.example`);
   const [existingUsers, existingCompanies, existingContacts, existingTags, existingStages] = await Promise.all([
     prisma.user.findMany({ where: { email: { in: userEmails } }, select: { id: true, email: true } }),
-    prisma.company.findMany({ where: { domain: { in: companyDomains } }, select: { id: true, domain: true } }),
-    prisma.contact.findMany({ where: { email: { in: contactEmails } }, select: { id: true, email: true } }),
-    prisma.tag.findMany({ where: { name: { in: tags.map(([name]) => name) } }, select: { id: true, name: true } }),
+    prisma.company.findMany({
+      where: { workspaceId: demoWorkspaceId, domain: { in: companyDomains } },
+      select: { id: true, domain: true },
+    }),
+    prisma.contact.findMany({
+      where: { workspaceId: demoWorkspaceId, email: { in: contactEmails } },
+      select: { id: true, email: true },
+    }),
+    prisma.tag.findMany({
+      where: { workspaceId: demoWorkspaceId, name: { in: tags.map(([name]) => name) } },
+      select: { id: true, name: true },
+    }),
     prisma.pipelineStage.findMany({
-      where: { name: { in: stages.map(({ name }) => name) } },
+      where: { workspaceId: demoWorkspaceId, name: { in: stages.map(({ name }) => name) } },
       select: { id: true, name: true },
     }),
   ]);
@@ -253,6 +264,7 @@ async function seed() {
     const domain = `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.crm-demo.example`;
     return {
       id: companyIds[index],
+      workspaceId: demoWorkspaceId,
       name,
       domain,
       industry,
@@ -263,6 +275,7 @@ async function seed() {
   }) satisfies Prisma.CompanyCreateManyInput[];
   const contactData = contactIds.map((id, index) => ({
     id,
+    workspaceId: demoWorkspaceId,
     firstName: firstNames[index],
     lastName: lastNames[index],
     email: `contact${String(index + 1).padStart(2, "0")}@crm-demo.example`,
@@ -277,6 +290,7 @@ async function seed() {
   })) satisfies Prisma.ContactCreateManyInput[];
   const dealData = dealIds.map((id, index) => ({
     id,
+    workspaceId: demoWorkspaceId,
     title: `${companyCatalog[index % companyCatalog.length][0]} — ${productLines[index % productLines.length]}`,
     value: dealValues[index].toFixed(2),
     currency: "USD",
@@ -304,6 +318,7 @@ async function seed() {
     const dueDate = daysFromNow(dueOffset);
     return {
       id,
+      workspaceId: demoWorkspaceId,
       type,
       title,
       description: noteTopics[index % noteTopics.length],
@@ -326,6 +341,7 @@ async function seed() {
     else subject = companyCatalog[companyIndex][0];
     return {
       id,
+      workspaceId: demoWorkspaceId,
       content: `${subject}: ${noteTopics[index % noteTopics.length]}`,
       contactId: index < 50 ? contactIds[contactIndex] : null,
       dealId: index >= 50 && index < 70 ? dealIds[dealIndex] : null,
@@ -338,13 +354,47 @@ async function seed() {
   await prisma.$transaction(
     async (tx) => {
       await tx.user.createMany({ data: userData, skipDuplicates: true });
+      await tx.workspace.upsert({
+        where: { id: demoWorkspaceId },
+        create: { id: demoWorkspaceId, name: "Original Workspace", slug: "original-workspace" },
+        update: {},
+      });
+      for (const [index, userId] of userIds.entries()) {
+        const hasMembership = await tx.workspaceMember.count({ where: { userId } });
+        await tx.workspaceMember.upsert({
+          where: { userId_workspaceId: { userId, workspaceId: demoWorkspaceId } },
+          create: {
+            userId,
+            workspaceId: demoWorkspaceId,
+            role: [WorkspaceRole.OWNER, WorkspaceRole.MANAGER, WorkspaceRole.MEMBER][index],
+            isDefault: hasMembership === 0,
+          },
+          update: {},
+        });
+      }
       await tx.pipelineStage.createMany({
-        data: stages.map((stage, index) => ({ id: stageIds[index], ...stage, position: index })),
+        data: stages.map((stage, index) => ({
+          id: stageIds[index],
+          workspaceId: demoWorkspaceId,
+          ...stage,
+          position: index,
+        })),
         skipDuplicates: true,
       });
       await tx.company.createMany({ data: companyData, skipDuplicates: true });
+      await tx.recordPermission.createMany({
+        data: companyIds.map((entityId, index) => ({
+          entityType: "Company",
+          entityId,
+          workspaceId: demoWorkspaceId,
+          userId: userIds[index % userIds.length],
+          grantedById: userIds[0],
+          permission: "FULL",
+        })),
+        skipDuplicates: true,
+      });
       await tx.tag.createMany({
-        data: tags.map(([name, color], index) => ({ id: tagIds[index], name, color })),
+        data: tags.map(([name, color], index) => ({ id: tagIds[index], workspaceId: demoWorkspaceId, name, color })),
         skipDuplicates: true,
       });
 

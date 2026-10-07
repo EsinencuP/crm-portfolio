@@ -2,8 +2,10 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { updateContactSchema } from "@/lib/validations/contact";
+import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
 
@@ -39,12 +41,24 @@ function writeError(error: unknown) {
 export async function GET(_request: Request, { params }: ContactContext) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to view contacts." }, { status: 401, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
 
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
+  if (!(await canAccess(user.id, "Contact", id.data, "VIEW")))
+    return Response.json({ error: "Contact not found." }, { status: 404, headers });
 
   try {
-    const contact = await prisma.contact.findUnique({ where: { id: id.data }, include: contactInclude });
+    const dealIds = await getAccessibleEntityIds(user.id, "Deal", member.workspaceId);
+    const contact = await prisma.contact.findUnique({
+      where: { id: id.data, workspaceId: member.workspaceId },
+      include: {
+        ...contactInclude,
+        deals: { where: { id: { in: dealIds } } },
+        _count: { select: { deals: { where: { id: { in: dealIds } } }, activities: true } },
+      },
+    });
     if (!contact) return Response.json({ error: "Contact not found." }, { status: 404, headers });
     return Response.json(contact, { headers });
   } catch {
@@ -55,10 +69,14 @@ export async function GET(_request: Request, { params }: ContactContext) {
 export async function PATCH(request: Request, { params }: ContactContext) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to update contacts." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
+  if (!(await canAccess(user.id, "Contact", id.data, "EDIT")))
+    return Response.json({ error: "Access denied." }, { status: 403, headers });
   if (request.headers.get("content-type")?.split(";")[0].trim().toLowerCase() !== "application/json") {
     return Response.json({ error: "Please send contact changes as JSON." }, { status: 415, headers });
   }
@@ -82,7 +100,17 @@ export async function PATCH(request: Request, { params }: ContactContext) {
   }
 
   try {
-    const contact = await prisma.contact.update({ where: { id: id.data }, data: parsed.data, include: contactInclude });
+    if (parsed.data.ownerId !== undefined && !(await canAccess(user.id, "Contact", id.data, "FULL")))
+      return Response.json({ error: "Full access required to change owner." }, { status: 403, headers });
+    if (parsed.data.companyId && !(await canAccess(user.id, "Company", parsed.data.companyId, "VIEW")))
+      return Response.json({ error: "Related company is not accessible." }, { status: 403, headers });
+    if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
+      return Response.json({ error: "Related record is outside this workspace." }, { status: 400, headers });
+    const contact = await prisma.contact.update({
+      where: { id: id.data, workspaceId: member.workspaceId },
+      data: parsed.data,
+      include: contactInclude,
+    });
     return Response.json(contact, { headers });
   } catch (error) {
     return writeError(error);
@@ -92,14 +120,18 @@ export async function PATCH(request: Request, { params }: ContactContext) {
 export async function DELETE(_request: Request, { params }: ContactContext) {
   const user = await getCurrentUser();
   if (!user?.id) return Response.json({ error: "Please sign in to archive contacts." }, { status: 401, headers });
-  if (user.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
+  const member = await getActiveWorkspaceMember(user.id);
+  if (!member) return Response.json({ error: "Create a workspace first." }, { status: 409, headers });
+  if (member.role === "VIEWER") return Response.json({ error: "Viewer role is read-only." }, { status: 403, headers });
 
   const id = idSchema.safeParse((await params).id);
   if (!id.success) return Response.json({ error: "Invalid contact ID." }, { status: 400, headers });
+  if (!(await canAccess(user.id, "Contact", id.data, "FULL")))
+    return Response.json({ error: "Access denied." }, { status: 403, headers });
 
   try {
     const contact = await prisma.contact.update({
-      where: { id: id.data },
+      where: { id: id.data, workspaceId: member.workspaceId },
       data: { status: "ARCHIVED" },
       include: contactInclude,
     });
