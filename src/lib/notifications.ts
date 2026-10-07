@@ -14,16 +14,19 @@ export interface CreateNotificationInput {
   metadata?: Prisma.InputJsonValue;
 }
 
-export async function createNotification(input: CreateNotificationInput) {
+export async function createNotification(
+  input: CreateNotificationInput,
+  db: Pick<typeof prisma, "workspaceMember" | "notification"> = prisma,
+) {
   if (input.link && (!input.link.startsWith("/dashboard/") || input.link.startsWith("//"))) {
     throw new Error("Notification links must stay inside the dashboard.");
   }
-  const member = await prisma.workspaceMember.findUnique({
+  const member = await db.workspaceMember.findUnique({
     where: { userId_workspaceId: { userId: input.userId, workspaceId: input.workspaceId } },
     select: { id: true },
   });
   if (!member) throw new Error("Notification recipient is not a workspace member.");
-  return prisma.notification.create({ data: input });
+  return db.notification.create({ data: input });
 }
 
 export async function markAsRead(notificationId: string, userId: string, workspaceId: string) {

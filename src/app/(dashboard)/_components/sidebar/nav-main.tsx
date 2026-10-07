@@ -33,10 +33,18 @@ export function NavMain({
         ? {
             ...group,
             items: group.items.filter(
-              (item) => !["/dashboard/settings", "/dashboard/settings/workspace"].includes(item.url),
+              (item) =>
+                !["/dashboard/settings", "/dashboard/settings/workspace", "/dashboard/settings/messaging"].includes(
+                  item.url,
+                ),
             ),
           }
-        : group,
+        : {
+            ...group,
+            items: group.items.filter(
+              (item) => item.url !== "/dashboard/forms" || ["OWNER", "ADMIN", "MANAGER"].includes(role),
+            ),
+          },
     );
   const activeItem = visibleGroups
     .flatMap((group) => group.items)

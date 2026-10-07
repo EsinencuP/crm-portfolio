@@ -19,8 +19,8 @@ export interface AuditLogInput {
   userAgent?: string | null;
 }
 
-export async function createAuditLog(input: AuditLogInput) {
-  return prisma.auditLog.create({
+export async function createAuditLog(input: AuditLogInput, db: Pick<typeof prisma, "auditLog"> = prisma) {
+  return db.auditLog.create({
     data: {
       action: input.action,
       entityType: input.entityType,

@@ -15,7 +15,9 @@
     "check:fix": "biome check --write .",
     "typecheck": "next typegen && tsc --noEmit",
     "bootstrap:admin": "node scripts/bootstrap-admin.cjs",
-    "worker:email": "node --conditions=react-server --import tsx src/lib/email/sync-worker.ts"
+    "worker:email": "node --conditions=react-server --import tsx src/lib/email/sync-worker.ts",
+    "test:telephony": "node --import ./tests/register.mjs --import tsx --test tests/telephony.test.mjs",
+    "test:integrations": "node --import ./tests/register.mjs --import tsx --test tests/*.test.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.79",

@@ -8,27 +8,31 @@ datasource db {
 }
 
 model User {
-  id                 String             @id @default(cuid())
-  name               String
-  email              String             @unique
-  passwordHash       String?
-  avatarUrl          String?
-  role               Role               @default(MEMBER)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
-  contacts           Contact[]          @relation("ContactOwner")
-  deals              Deal[]             @relation("DealOwner")
-  activities         Activity[]
-  notes              Note[]
-  accounts           Account[]
-  sessions           Session[]
-  sentInvites        TeamInvite[]       @relation("InviteSender")
-  workspaceMembers   WorkspaceMember[]
-  auditLogs          AuditLog[]
-  notifications      Notification[]
-  emailAccounts      EmailAccount[]
-  recordPermissions  RecordPermission[] @relation("RecordPermissions")
-  permissionsGranted RecordPermission[] @relation("PermissionsGranted")
+  id                    String                  @id @default(cuid())
+  name                  String
+  email                 String                  @unique
+  passwordHash          String?
+  avatarUrl             String?
+  role                  Role                    @default(MEMBER)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  contacts              Contact[]               @relation("ContactOwner")
+  deals                 Deal[]                  @relation("DealOwner")
+  activities            Activity[]
+  notes                 Note[]
+  accounts              Account[]
+  sessions              Session[]
+  sentInvites           TeamInvite[]            @relation("InviteSender")
+  workspaceMembers      WorkspaceMember[]
+  auditLogs             AuditLog[]
+  notifications         Notification[]
+  emailAccounts         EmailAccount[]
+  phoneCalls            PhoneCall[]
+  assignedConversations MessagingConversation[] @relation("AssignedConversations")
+  messagingMessages     MessagingMessage[]      @relation("MessageSender")
+  createdForms          LeadCaptureForm[]
+  recordPermissions     RecordPermission[]      @relation("RecordPermissions")
+  permissionsGranted    RecordPermission[]      @relation("PermissionsGranted")
 }
 
 model Workspace {
@@ -54,6 +58,9 @@ model Workspace {
   notifications     Notification[]
   emailAccounts     EmailAccount[]
   emailMessages     EmailMessage[]
+  phoneCalls        PhoneCall[]
+  messagingChannels MessagingChannel[]
+  leadCaptureForms  LeadCaptureForm[]
   recordPermissions RecordPermission[]
 }
 
@@ -236,36 +243,83 @@ model Session {
 }
 
 model Contact {
-  id            String         @id @default(cuid())
-  workspaceId   String
-  workspace     Workspace      @relation(fields: [workspaceId], references: [id])
-  firstName     String
-  lastName      String
-  email         String?
-  phone         String?
-  jobTitle      String?
-  avatarUrl     String?
-  source        ContactSource  @default(MANUAL)
-  status        ContactStatus  @default(ACTIVE)
-  city          String?
-  country       String?
-  linkedinUrl   String?
-  notes_text    String?
-  companyId     String?
-  company       Company?       @relation(fields: [companyId], references: [id])
-  ownerId       String?
-  owner         User?          @relation("ContactOwner", fields: [ownerId], references: [id])
-  deals         Deal[]
-  activities    Activity[]
-  notes         Note[]
-  emailMessages EmailMessage[]
-  tags          Tag[]
-  customFields  Json?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                     String                  @id @default(cuid())
+  workspaceId            String
+  workspace              Workspace               @relation(fields: [workspaceId], references: [id])
+  firstName              String
+  lastName               String
+  email                  String?
+  phone                  String?
+  jobTitle               String?
+  avatarUrl              String?
+  source                 ContactSource           @default(MANUAL)
+  status                 ContactStatus           @default(ACTIVE)
+  city                   String?
+  country                String?
+  linkedinUrl            String?
+  notes_text             String?
+  companyId              String?
+  company                Company?                @relation(fields: [companyId], references: [id])
+  ownerId                String?
+  owner                  User?                   @relation("ContactOwner", fields: [ownerId], references: [id])
+  deals                  Deal[]
+  activities             Activity[]
+  notes                  Note[]
+  phoneCalls             PhoneCall[]
+  messagingConversations MessagingConversation[]
+  formSubmissions        FormSubmission[]
+  emailMessages          EmailMessage[]
+  tags                   Tag[]
+  customFields           Json?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@unique([workspaceId, email])
   @@index([workspaceId])
+}
+
+model LeadCaptureForm {
+  id              String           @id @default(cuid())
+  name            String
+  slug            String           @unique
+  description     String?
+  fields          Json
+  style           Json?
+  thankyouMessage String?          @default("Thank you! We'll be in touch.")
+  redirectUrl     String?
+  assignToId      String?
+  tagIds          String[]         @default([])
+  pipelineStageId String?
+  isActive        Boolean          @default(true)
+  submissionCount Int              @default(0)
+  workspaceId     String
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById     String?
+  createdBy       User?            @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  submissions     FormSubmission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([workspaceId, createdAt])
+}
+
+model FormSubmission {
+  id              String          @id @default(cuid())
+  formId          String
+  form            LeadCaptureForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  data            Json
+  contactId       String?
+  contact         Contact?        @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  clientRequestId String
+  ipAddress       String?
+  userAgent       String?
+  referrer        String?
+  processed       Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+
+  @@unique([formId, clientRequestId])
+  @@index([formId, createdAt])
+  @@index([formId, ipAddress, createdAt])
 }
 
 enum ContactSource {
@@ -339,6 +393,7 @@ model Deal {
   owner         User?          @relation("DealOwner", fields: [ownerId], references: [id])
   activities    Activity[]
   notes         Note[]
+  phoneCalls    PhoneCall[]
   emailMessages EmailMessage[]
   tags          Tag[]
   createdAt     DateTime       @default(now())
@@ -496,5 +551,139 @@ enum EmailStatus {
   SENT
   DELIVERED
   BOUNCED
+  FAILED
+}
+
+model PhoneCall {
+  id             String        @id @default(cuid())
+  direction      CallDirection
+  status         CallStatus
+  fromNumber     String
+  toNumber       String
+  duration       Int?
+  recordingUrl   String?
+  transcript     String?
+  notes          String?
+  provider       String        @default("twilio")
+  externalId     String?       @unique
+  dialExternalId String?       @unique
+  dialStarted    Boolean       @default(false)
+  contactId      String?
+  contact        Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  dealId         String?
+  deal           Deal?         @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  workspaceId    String
+  workspace      Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@index([contactId])
+  @@index([userId])
+  @@index([workspaceId, createdAt])
+}
+
+enum CallDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum CallStatus {
+  RINGING
+  IN_PROGRESS
+  COMPLETED
+  MISSED
+  VOICEMAIL
+  FAILED
+}
+
+model MessagingChannel {
+  id            String                  @id @default(cuid())
+  platform      MessagingPlatform
+  channelId     String
+  channelName   String
+  phoneNumber   String?
+  botUsername   String?
+  accessToken   String?
+  webhookSecret String?
+  isActive      Boolean                 @default(true)
+  workspaceId   String
+  workspace     Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  conversations MessagingConversation[]
+  createdAt     DateTime                @default(now())
+  updatedAt     DateTime                @updatedAt
+
+  @@unique([platform, channelId])
+  @@index([workspaceId])
+}
+
+enum MessagingPlatform {
+  WHATSAPP
+  TELEGRAM
+}
+
+model MessagingConversation {
+  id            String             @id @default(cuid())
+  externalId    String
+  displayName   String?
+  channelId     String
+  channel       MessagingChannel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contactId     String?
+  contact       Contact?           @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  assignedToId  String?
+  assignedTo    User?              @relation("AssignedConversations", fields: [assignedToId], references: [id], onDelete: SetNull)
+  status        ConversationStatus @default(OPEN)
+  lastMessageAt DateTime?
+  unreadCount   Int                @default(0)
+  messages      MessagingMessage[]
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+
+  @@unique([channelId, externalId])
+  @@index([contactId])
+  @@index([channelId, lastMessageAt])
+  @@index([assignedToId])
+}
+
+enum ConversationStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+model MessagingMessage {
+  id              String                @id @default(cuid())
+  externalId      String?
+  clientRequestId String?
+  conversationId  String
+  conversation    MessagingConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  direction       MessageDirection
+  content         String?
+  mediaUrl        String?
+  mediaId         String?
+  mediaType       String?
+  status          MessageDeliveryStatus @default(SENT)
+  sentAt          DateTime              @default(now())
+  deliveredAt     DateTime?
+  readAt          DateTime?
+  senderId        String?
+  sender          User?                 @relation("MessageSender", fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@unique([conversationId, externalId])
+  @@unique([conversationId, clientRequestId])
+  @@index([conversationId, sentAt])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageDeliveryStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
   FAILED
 }

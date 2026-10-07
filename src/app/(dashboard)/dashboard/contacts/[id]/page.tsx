@@ -3,12 +3,16 @@ import { notFound } from "next/navigation";
 
 import { ArrowLeft } from "lucide-react";
 
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
+import { callAccessWhere } from "@/lib/telephony/call-access";
+import { callStatusLabels, formatCallDuration } from "@/lib/telephony/call-types";
 import { requireActiveWorkspaceMember } from "@/lib/workspace";
 
 import type { ContactRow } from "../_components/contacts-columns";
 import { AiBriefCard } from "./_components/ai-brief-card";
+import { CallLog } from "./_components/call-log";
 import { type ContactDeal, ContactDeals } from "./_components/contact-deals";
 import { type ContactDetails, ContactDetailsSidebar } from "./_components/contact-details-sidebar";
 import { ContactHeader } from "./_components/contact-header";
@@ -45,8 +49,18 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
 
   const emails = await prisma.emailMessage.findMany({
     where: { workspaceId: member.workspaceId, contactId: id, account: { userId: member.userId } },
-    select: { id: true, direction: true, subject: true, snippet: true, from: true, receivedAt: true, sentAt: true, createdAt: true },
-    orderBy: { createdAt: "desc" }, take: 50,
+    select: {
+      id: true,
+      direction: true,
+      subject: true,
+      snippet: true,
+      from: true,
+      receivedAt: true,
+      sentAt: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: "desc" },
+    take: 50,
   });
 
   const row: ContactRow = {
@@ -69,6 +83,8 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
   };
   const details: ContactDetails = {
     id: contact.id,
+    firstName: contact.firstName,
+    lastName: contact.lastName,
     email: contact.email,
     phone: contact.phone,
     linkedinUrl: contact.linkedinUrl,
@@ -81,7 +97,24 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
     notes_text: contact.notes_text,
     tags: contact.tags.map(({ id, name, color }) => ({ id, name, color })),
   };
+  const calls = await prisma.phoneCall.findMany({
+    where: { AND: [{ contactId: id }, await callAccessWhere(member)] },
+    include: { user: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
   const events: TimelineEvent[] = [
+    ...calls.map((call) => ({
+      id: `phone-call-${call.id}`,
+      type: "CALL" as const,
+      title: `${call.direction === "OUTBOUND" ? "Outbound" : "Inbound"} call: ${callStatusLabels[call.status]}`,
+      description:
+        [call.duration === null ? null : `Duration: ${formatCallDuration(call.duration)}`, call.notes]
+          .filter(Boolean)
+          .join("\n") || null,
+      actor: call.user.name,
+      createdAt: call.createdAt.toISOString(),
+    })),
     ...emails.map((email) => ({
       id: `email-${email.id}`,
       type: "EMAIL" as const,
@@ -128,7 +161,18 @@ export default async function ContactPage({ params }: { params: Promise<{ id: st
       <div className="grid grid-cols-1 gap-4 md:gap-6 lg:grid-cols-12">
         <div className="space-y-4 md:space-y-6 lg:col-span-8">
           <AiBriefCard contactId={contact.id} />
-          <ContactTimeline contactId={contact.id} events={events} canEdit={canEdit} />
+          <Tabs defaultValue="timeline">
+            <TabsList aria-label="Contact history">
+              <TabsTrigger value="timeline">Timeline</TabsTrigger>
+              <TabsTrigger value="calls">Calls</TabsTrigger>
+            </TabsList>
+            <TabsContent value="timeline">
+              <ContactTimeline contactId={contact.id} events={events} canEdit={canEdit} />
+            </TabsContent>
+            <TabsContent value="calls">
+              <CallLog contactId={contact.id} canEdit={canEdit} />
+            </TabsContent>
+          </Tabs>
           <ContactDeals contactId={contact.id} deals={deals} canEdit={canEdit} />
         </div>
         <aside className="lg:col-span-4">

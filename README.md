@@ -96,6 +96,32 @@ Set `REDIS_URL` and run `npm run worker:email` as a **separate persistent proces
 
 After the notifications migration, apply [`prisma/sql/15-3-email-clicked-notification.sql`](./prisma/sql/15-3-email-clicked-notification.sql) and regenerate Prisma Client. Sending from the Mail compose dialog and contact AI draft now uses `/api/emails/send` with the connected account. Tracking is opt-in per message. Set `EMAIL_TRACKING_BASE_URL` to a publicly reachable HTTPS origin and `EMAIL_TRACKING_SECRET` to a separate random secret of at least 32 characters. The open pixel and signed click links must remain reachable without login. First open and first click create notifications; repeated requests increase counters without more notifications. Open counts are approximate because email clients can block, proxy, or prefetch images. Changing the tracking secret invalidates links in previously sent emails. The public tracking routes have not been exercised with real mail providers in this workspace.
 
+### Telephony: click-to-call (16.1)
+
+For an existing database, apply [`prisma/sql/16-1-phone-calls.sql`](./prisma/sql/16-1-phone-calls.sql) after the workspace, audit and notification migrations and regenerate Prisma Client. A fresh database can use `npx prisma db push`. Set `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (a voice-capable Twilio number), `TWILIO_AGENT_PHONE_NUMBER` (the operator phone) and `TWILIO_WEBHOOK_BASE_URL` (the public HTTPS origin, without a path). The webhook origin falls back to `NEXTAUTH_URL` when not set. Local development needs a public HTTPS tunnel.
+
+The Call button beside a contact's phone requires EDIT access and asks for confirmation. Twilio rings the configured operator first; once answered, the signed voice webhook connects to the contact's saved international-format number. The operator number is deployment-wide, so this implementation uses one configured operator phone, not each user's personal phone. Both legs use the configured Twilio caller ID. Recording starts when the contact answers. The confirmation explicitly mentions recording. PhoneCall is saved and audited before dialing; callbacks update status and duration, and recording callbacks save audio when ready. Missed/busy/canceled calls notify the initiating user once. Operator failure to answer does not dial the contact. Recording playback uses an authenticated proxy, keeping Twilio credentials on the server.
+
+Contact history now has Timeline and Calls tabs, with paginated call logs, playback and editable notes. Workspace and record permissions apply to list, detail, edit and recording routes. Webhooks require a valid Twilio signature. Inbound call routing, voicemail detection and transcription are not part of 16.1. Trial accounts may require verified destination numbers. Verify the operator/contact bridge, callbacks and recording playback with your configured Twilio account before deployment.
+
+### Unified Inbox: WhatsApp and Telegram (17.1)
+
+Apply [`prisma/sql/17-1-messaging.sql`](./prisma/sql/17-1-messaging.sql) once after workspace, ACL and notifications, then regenerate Prisma Client. Fresh databases can use `prisma db push`. Set `MESSAGING_WEBHOOK_BASE_URL` to the public HTTPS origin and `MESSAGING_TOKEN_ENCRYPTION_KEY` to a stable, separate 32-byte base64 key. Set `WHATSAPP_APP_SECRET` and `WHATSAPP_API_VERSION` for Meta. OWNER/ADMIN connects channels in **Settings → Messaging**; tokens and webhook secrets are encrypted and excluded from API responses. Telegram bot identity is hashed from the verified bot ID so token rotation cannot connect the same bot to another workspace.
+
+Copy each channel's webhook URL, including its `channelId` query parameter. In Meta, configure that URL and the channel's Verify Token and subscribe to `messages`. Telegram connection registers its webhook automatically with a secret header. Incoming messages are deduplicated by channel/conversation/provider ID. WhatsApp links contacts by normalized phone within the channel workspace. Telegram links only a verified self-shared phone, or a string `customFields.telegramUserId` / `customFields.telegramChatId` on a contact; names and usernames are not treated as verified identity. Unknown senders remain unlinked. Telegram supports private bot chats; group messages and edited updates are ignored.
+
+Inbox provides platform/status/assignee/search filters, cursor-paginated chat history, read counts, assignment and status changes, text and public HTTPS image replies. WhatsApp replies require the 24-hour service window or an approved template (name, language and one body parameter per line). Incoming WhatsApp delivery callbacks update sent/delivered/read/failed status without regression. Media downloads use an authenticated proxy and never expose Telegram bot-token URLs. Unlinked conversations are visible to workspace members for triage; linked conversations follow Contact ACL. VIEWER cannot send or edit. New messages notify the assignee/contact owner if authorized, or workspace admins. Pausing retains history but acknowledges/discards new incoming events; there is no history backfill or automatic retry of ambiguous outbound delivery. Providers and credentials must be tested with real accounts before deployment.
+
+The responsive two-panel layout is adapted from the existing [Base UI chat example](https://github.com/arhamkhnz/next-shadcn-admin-dashboard-baseui/tree/main/src/app/(main)/chat/_components) using the repository's Bubble, Message and MessageScroller components. Messaging uses polling; no extra worker or realtime server is required.
+
+### Lead capture forms (18.1)
+
+Apply `prisma/sql/18-1-lead-capture-forms.sql` once to an existing database, then run `npx prisma generate`. Owners, administrators and managers can create/edit forms at `/dashboard/forms`; `/forms/{slug}` and `POST /api/forms/{slug}/submit` are public. The API folder uses `[id]/submit` to avoid Next.js's conflicting dynamic segment names. Serve the CRM over HTTPS for website iframe embeds and clipboard support; deployment headers must permit framing public `/forms/*` pages.
+
+Configure fields with CRM keys `firstName`, `lastName`, `email`, `phone`, `message`; custom keys are preserved in submissions and new contacts' custom fields. Missing names default to Website/Lead. Email matching is case-insensitive within the form's workspace. Existing contact data and ownership are preserved; tags/deals are applied only if the configured lead owner can edit the matched contact. The configured owner, then form creator, then workspace administrator receives the notification. No contact identifiers are returned publicly.
+
+Submissions are atomic and replay-safe (`requestId`: UUID). They use a honeypot, 64 KiB JSON limit and a database-backed limit of 60 submissions/form/minute. Enable `FORMS_TRUST_PROXY=true` **only** if a trusted proxy replaces forwarding headers, adding a limit of 5 submissions/IP/form/minute. For public production traffic add proxy/WAF abuse protection or CAPTCHA; these safeguards are not a complete anti-bot service. Submission metadata may contain IP/referrer/user agent: configure an appropriate retention/privacy policy. Deleting a form removes its submissions but preserves contacts and deals. New models are not applied to a live database automatically.
+
 ### Demo credentials
 
 | Role | Email | Password |
@@ -134,7 +160,13 @@ Team invitation links are created in **Settings → Team & roles** and must be s
 npm run typecheck
 npm run check
 npm run build
+npm run test:telephony
+npm run test:integrations
 ```
+
+The telephony suite uses Node.js 24+, mocked Prisma delegates and simulated signed Twilio callbacks. It makes no real calls and covers bridge setup, authorization, workspace isolation, callback retries, terminal status preservation, recording correlation and atomic missed-call notifications.
+
+The integration command runs the telephony and messaging suites together, including webhook signatures, batch parsing, deduplication, unread counts, contact/workspace access, safe channel responses, outbound idempotency and WhatsApp reply-window/template behavior. It does not send real messages or connect provider accounts.
 
 ## Built with
 

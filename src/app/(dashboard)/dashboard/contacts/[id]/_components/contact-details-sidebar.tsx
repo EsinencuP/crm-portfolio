@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Check, Pencil, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { ClickToCall } from "@/components/click-to-call";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,6 +19,8 @@ import { Separator } from "@/components/ui/separator";
 
 export type ContactDetails = {
   id: string;
+  firstName: string;
+  lastName: string;
   email: string | null;
   phone: string | null;
   linkedinUrl: string | null;
@@ -150,20 +153,29 @@ export function ContactDetailsSidebar({
                 </Button>
               </div>
             ) : (
-              <button
-                type="button"
-                disabled={!canEdit}
-                className="flex w-full items-center justify-between gap-2 rounded-md text-left hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
-                onClick={() => {
-                  setEditing(key);
-                  setDraft(contact[key] ?? "");
-                }}
-              >
-                <span className="truncate">
-                  {contact[key] || <span className="text-muted-foreground">Add {label.toLowerCase()}</span>}
-                </span>
-                <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" />
-              </button>
+              <div className="flex items-start gap-2">
+                <button
+                  type="button"
+                  disabled={!canEdit}
+                  className="flex w-full items-center justify-between gap-2 rounded-md text-left hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
+                  onClick={() => {
+                    setEditing(key);
+                    setDraft(contact[key] ?? "");
+                  }}
+                >
+                  <span className="truncate">
+                    {contact[key] || <span className="text-muted-foreground">Add {label.toLowerCase()}</span>}
+                  </span>
+                  <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-focus-within:opacity-100 group-hover:opacity-100" />
+                </button>
+                {key === "phone" && contact.phone && canEdit && (
+                  <ClickToCall
+                    phoneNumber={contact.phone}
+                    contactId={contact.id}
+                    contactName={`${contact.firstName} ${contact.lastName}`}
+                  />
+                )}
+              </div>
             )}
           </div>
         ))}

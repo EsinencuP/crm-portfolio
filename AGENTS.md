@@ -7,3 +7,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+## Экономия токенов и проверки
+
+- Используй токены рационально: читай только нужные файлы, объединяй независимые запросы и избегай повторных чтений и избыточного вывода.
+- Не проводи многочисленные маленькие проверки во время реализации. Выполни одну полноценную проверку в конце работы.
+- Повторяй только проверки, необходимые после исправления найденных ошибок или новых изменений; не перезапускай успешные проверки без причины.

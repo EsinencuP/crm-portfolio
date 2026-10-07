@@ -20,6 +20,7 @@ export default auth((request) => {
 });
 
 export const config = {
+  // /forms/* and /api/forms/*/submit stay public. Private form APIs enforce auth themselves.
   matcher: ["/dashboard(.*)", "/login", "/register"],
   runtime: "nodejs",
 };

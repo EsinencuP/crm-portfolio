@@ -4,10 +4,12 @@ import {
   Building2,
   CalendarDays,
   DollarSign,
+  FileInput,
   GitBranch,
   LayoutDashboard,
-  Mail,
   type LucideIcon,
+  Mail,
+  MessageSquare,
   ScrollText,
   UserCog,
   Users,
@@ -28,6 +30,8 @@ export const sidebarNav = {
     { title: "Activities", url: "/dashboard/activities", icon: CalendarDays },
     { title: "Notifications", url: "/dashboard/notifications", icon: Bell },
     { title: "Mail", url: "/dashboard/mail", icon: Mail },
+    { title: "Inbox", url: "/dashboard/inbox", icon: MessageSquare },
+    { title: "Forms", url: "/dashboard/forms", icon: FileInput },
   ],
   analytics: [{ title: "Reports", url: "/dashboard/analytics", icon: BarChart3 }],
   settings: [
@@ -36,6 +40,7 @@ export const sidebarNav = {
     { title: "Workspace", url: "/dashboard/settings/workspace", icon: Building2 },
     { title: "Audit Log", url: "/dashboard/settings/audit-log", icon: ScrollText },
     { title: "Email Settings", url: "/dashboard/settings/email", icon: Mail },
+    { title: "Messaging", url: "/dashboard/settings/messaging", icon: MessageSquare },
   ],
 } as const satisfies Record<string, readonly SidebarNavItem[]>;
 
