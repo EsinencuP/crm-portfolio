@@ -9,6 +9,8 @@ A CRM dashboard for contacts, companies, deals, activities, analytics, and team 
 
 **Live demo:** [crm-portfolio-omega.vercel.app](https://crm-portfolio-omega.vercel.app) · Sign in with the [demo credentials](#demo-credentials).
 
+**Подробная инструкция на русском:** [как пользоваться приложением, всеми разделами и показателями](ИНСТРУКЦИЯ.md).
+
 ![CRM dashboard screenshot placeholder](./public/screenshots/dashboard.png)
 
 > Screenshot placeholder: add a capture at `public/screenshots/dashboard.png` when the final demo UI is ready.
