@@ -1,5 +1,7 @@
 import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,9 +23,22 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tra
         select: { id: true, subject: true, workspaceId: true, account: { select: { userId: true } } },
       });
       if (message) {
-        const first = await prisma.emailMessage.updateMany({
-          where: { id: message.id, trackingId, openedAt: null },
-          data: { openedAt: new Date(), openCount: { increment: 1 } },
+        const first = await prisma.$transaction(async (tx) => {
+          const updated = await tx.emailMessage.updateMany({
+            where: { id: message.id, trackingId, openedAt: null },
+            data: { openedAt: new Date(), openCount: { increment: 1 } },
+          });
+          if (updated.count)
+            await triggerWorkflows("EMAIL_OPENED", "EmailMessage", message.id, message.workspaceId, {}, tx, message.id);
+          if (updated.count)
+            await dispatchWebhooks(
+              "email.opened",
+              { id: message.id, subject: message.subject },
+              message.workspaceId,
+              tx,
+              message.id,
+            );
+          return updated;
         });
         if (!first.count)
           await prisma.emailMessage.update({ where: { id: message.id }, data: { openCount: { increment: 1 } } });

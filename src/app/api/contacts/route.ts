@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createContactSchema } from "@/lib/validations/contact";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -169,9 +171,14 @@ export async function POST(request: Request) {
       return Response.json({ error: "Related company is not accessible." }, { status: 403, headers });
     if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
       return Response.json({ error: "Company or owner is outside this workspace." }, { status: 400, headers });
-    const contact = await prisma.contact.create({
-      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
-      include: contactInclude,
+    const contact = await prisma.$transaction(async (tx) => {
+      const created = await tx.contact.create({
+        data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
+        include: contactInclude,
+      });
+      await triggerWorkflows("CONTACT_CREATED", "Contact", created.id, member.workspaceId, {}, tx, created.id);
+      await dispatchWebhooks("contact.created", created, member.workspaceId, tx, created.id);
+      return created;
     });
     return Response.json(contact, { status: 201, headers });
   } catch (error) {

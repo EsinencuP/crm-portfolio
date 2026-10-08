@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { updateContactSchema } from "@/lib/validations/contact";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -106,10 +108,23 @@ export async function PATCH(request: Request, { params }: ContactContext) {
       return Response.json({ error: "Related company is not accessible." }, { status: 403, headers });
     if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
       return Response.json({ error: "Related record is outside this workspace." }, { status: 400, headers });
-    const contact = await prisma.contact.update({
-      where: { id: id.data, workspaceId: member.workspaceId },
-      data: parsed.data,
-      include: contactInclude,
+    const contact = await prisma.$transaction(async (tx) => {
+      const updated = await tx.contact.update({
+        where: { id: id.data, workspaceId: member.workspaceId },
+        data: parsed.data,
+        include: contactInclude,
+      });
+      await triggerWorkflows(
+        "CONTACT_UPDATED",
+        "Contact",
+        updated.id,
+        member.workspaceId,
+        {},
+        tx,
+        updated.updatedAt.toISOString(),
+      );
+      await dispatchWebhooks("contact.updated", updated, member.workspaceId, tx, updated.updatedAt.toISOString());
+      return updated;
     });
     return Response.json(contact, { headers });
   } catch (error) {
@@ -130,10 +145,24 @@ export async function DELETE(_request: Request, { params }: ContactContext) {
     return Response.json({ error: "Access denied." }, { status: 403, headers });
 
   try {
-    const contact = await prisma.contact.update({
-      where: { id: id.data, workspaceId: member.workspaceId },
-      data: { status: "ARCHIVED" },
-      include: contactInclude,
+    const contact = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Contact" WHERE "id" = ${id.data} AND "workspaceId" = ${member.workspaceId} FOR UPDATE`;
+      const previous = await tx.contact.findUniqueOrThrow({
+        where: { id: id.data, workspaceId: member.workspaceId },
+        select: { status: true },
+      });
+      if (previous.status === "ARCHIVED")
+        return tx.contact.findUniqueOrThrow({
+          where: { id: id.data, workspaceId: member.workspaceId },
+          include: contactInclude,
+        });
+      const updated = await tx.contact.update({
+        where: { id: id.data, workspaceId: member.workspaceId },
+        data: { status: "ARCHIVED" },
+        include: contactInclude,
+      });
+      await dispatchWebhooks("contact.deleted", updated, member.workspaceId, tx, updated.updatedAt.toISOString());
+      return updated;
     });
     return Response.json(contact, { headers });
   } catch (error) {

@@ -34,15 +34,20 @@ export function NavMain({
             ...group,
             items: group.items.filter(
               (item) =>
-                !["/dashboard/settings", "/dashboard/settings/workspace", "/dashboard/settings/messaging"].includes(
-                  item.url,
-                ),
+                ![
+                  "/dashboard/settings",
+                  "/dashboard/settings/workspace",
+                  "/dashboard/settings/messaging",
+                  "/dashboard/settings/webhooks",
+                ].includes(item.url),
             ),
           }
         : {
             ...group,
             items: group.items.filter(
-              (item) => item.url !== "/dashboard/forms" || ["OWNER", "ADMIN", "MANAGER"].includes(role),
+              (item) =>
+                !["/dashboard/forms", "/dashboard/workflows"].includes(item.url) ||
+                ["OWNER", "ADMIN", "MANAGER"].includes(role),
             ),
           },
     );

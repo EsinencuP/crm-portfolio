@@ -6,6 +6,8 @@ import { notifyDealStageChange } from "@/lib/notifications";
 import { canAccess } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { changeDealStageSchema } from "@/lib/validations/deal";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -47,10 +49,33 @@ export async function PATCH(request: Request, { params }: Context) {
       select: { stageId: true, title: true, ownerId: true },
     });
     if (!previous) return Response.json({ error: "Deal not found." }, { status: 404, headers });
-    const deal = await prisma.deal.update({
-      where: { id: id.data, workspaceId: member.workspaceId },
-      data: { stageId: parsed.data.stageId },
-      select: { id: true, stageId: true, stage: true, updatedAt: true },
+    const deal = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Deal" WHERE "id" = ${id.data} AND "workspaceId" = ${member.workspaceId} FOR UPDATE`;
+      const old = await tx.deal.findUniqueOrThrow({
+        where: { id: id.data, workspaceId: member.workspaceId },
+        select: { stageId: true },
+      });
+      const updated = await tx.deal.update({
+        where: { id: id.data, workspaceId: member.workspaceId },
+        data: { stageId: parsed.data.stageId },
+        select: { id: true, stageId: true, stage: true, updatedAt: true },
+      });
+      if (old.stageId !== updated.stageId) {
+        const event = { oldStage: old.stageId, newStage: updated.stageId };
+        const key = `${updated.id}-${updated.updatedAt.toISOString()}`;
+        await triggerWorkflows("DEAL_STAGE_CHANGED", "Deal", updated.id, member.workspaceId, event, tx, key);
+        await dispatchWebhooks("deal.stage_changed", { ...updated, ...event }, member.workspaceId, tx, key);
+        const name = updated.stage.name.trim().toLowerCase();
+        if (name === "closed won")
+          await triggerWorkflows("DEAL_WON", "Deal", updated.id, member.workspaceId, event, tx, key);
+        if (name === "closed lost")
+          await triggerWorkflows("DEAL_LOST", "Deal", updated.id, member.workspaceId, event, tx, key);
+        if (name === "closed won")
+          await dispatchWebhooks("deal.won", { ...updated, ...event }, member.workspaceId, tx, key);
+        if (name === "closed lost")
+          await dispatchWebhooks("deal.lost", { ...updated, ...event }, member.workspaceId, tx, key);
+      }
+      return updated;
     });
     await notifyDealStageChange({
       dealId: deal.id,

@@ -7,6 +7,8 @@ import { fieldsSchema, submissionSchema } from "@/lib/forms/config";
 import { createNotification } from "@/lib/notifications";
 import prisma from "@/lib/prisma";
 import { createContactSchema } from "@/lib/validations/contact";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
@@ -122,6 +124,7 @@ export async function submitLeadForm(slug: string, body: unknown, request: Reque
                 select: { id: true },
               })
             : [];
+        let newContact = false;
         if (!contact) {
           const contactData = createContactSchema.parse({
             firstName: text("firstName") || "Website",
@@ -141,6 +144,7 @@ export async function submitLeadForm(slug: string, body: unknown, request: Reque
             },
             select: { id: true, ownerId: true },
           });
+          newContact = true;
         } else if (canEdit && (tags.length || !contact.ownerId)) {
           await tx.contact.update({
             where: { id: contact.id, workspaceId: form.workspaceId },
@@ -159,7 +163,7 @@ export async function submitLeadForm(slug: string, body: unknown, request: Reque
             where: { id: form.workspaceId },
             select: { defaultCurrency: true },
           });
-          await tx.deal.create({
+          const createdDeal = await tx.deal.create({
             data: {
               title: `${form.name}: ${text("firstName") || "Website lead"}`.slice(0, 200),
               stageId: stage.id,
@@ -170,6 +174,16 @@ export async function submitLeadForm(slug: string, body: unknown, request: Reque
               description: text("message") || null,
             },
           });
+          await triggerWorkflows(
+            "DEAL_CREATED",
+            "Deal",
+            createdDeal.id,
+            form.workspaceId,
+            { formId: form.id },
+            tx,
+            createdDeal.id,
+          );
+          await dispatchWebhooks("deal.created", createdDeal, form.workspaceId, tx, createdDeal.id);
         }
         const submission = await tx.formSubmission.create({
           data: {
@@ -183,6 +197,38 @@ export async function submitLeadForm(slug: string, body: unknown, request: Reque
             processed: true,
           },
         });
+        if (newContact)
+          await triggerWorkflows(
+            "CONTACT_CREATED",
+            "Contact",
+            contact.id,
+            form.workspaceId,
+            { formId: form.id },
+            tx,
+            contact.id,
+          );
+        await triggerWorkflows(
+          "FORM_SUBMITTED",
+          "Contact",
+          contact.id,
+          form.workspaceId,
+          { formId: form.id },
+          tx,
+          submission.id,
+        );
+        await dispatchWebhooks(
+          "form.submitted",
+          { id: submission.id, formId: form.id, contactId: contact.id, data },
+          form.workspaceId,
+          tx,
+          submission.id,
+        );
+        if (newContact) {
+          const created = await tx.contact.findUniqueOrThrow({
+            where: { id: contact.id, workspaceId: form.workspaceId },
+          });
+          await dispatchWebhooks("contact.created", created, form.workspaceId, tx, contact.id);
+        }
         // Preserve editor version: incoming submissions must not conflict with settings saves.
         await tx.leadCaptureForm.update({
           where: { id: form.id },

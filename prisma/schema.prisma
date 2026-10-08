@@ -31,6 +31,7 @@ model User {
   assignedConversations MessagingConversation[] @relation("AssignedConversations")
   messagingMessages     MessagingMessage[]      @relation("MessageSender")
   createdForms          LeadCaptureForm[]
+  createdWorkflows      Workflow[]              @relation("WorkflowCreator")
   recordPermissions     RecordPermission[]      @relation("RecordPermissions")
   permissionsGranted    RecordPermission[]      @relation("PermissionsGranted")
 }
@@ -61,7 +62,167 @@ model Workspace {
   phoneCalls        PhoneCall[]
   messagingChannels MessagingChannel[]
   leadCaptureForms  LeadCaptureForm[]
+  workflows         Workflow[]
+  webhooks          Webhook[]
   recordPermissions RecordPermission[]
+}
+
+model Workflow {
+  id            String          @id @default(cuid())
+  name          String
+  description   String?
+  trigger       WorkflowTrigger
+  triggerConfig Json
+  canvas        Json?
+  isActive      Boolean         @default(true)
+  runCount      Int             @default(0)
+  lastRunAt     DateTime?
+  workspaceId   String
+  workspace     Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdById   String
+  createdBy     User            @relation("WorkflowCreator", fields: [createdById], references: [id])
+  steps         WorkflowStep[]
+  runs          WorkflowRun[]
+  deletedAt     DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([workspaceId, trigger, isActive])
+  @@index([workspaceId, createdById, createdAt])
+}
+
+enum WorkflowTrigger {
+  CONTACT_CREATED
+  CONTACT_UPDATED
+  DEAL_CREATED
+  DEAL_STAGE_CHANGED
+  DEAL_WON
+  DEAL_LOST
+  ACTIVITY_COMPLETED
+  FORM_SUBMITTED
+  EMAIL_RECEIVED
+  EMAIL_OPENED
+  MANUAL
+  SCHEDULED
+}
+
+model WorkflowStep {
+  id           String           @id @default(cuid())
+  workflowId   String
+  workflow     Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  position     Int
+  nodeId       String?
+  nextPosition Int?
+  elsePosition Int?
+  type         WorkflowStepType
+  config       Json
+  createdAt    DateTime         @default(now())
+
+  @@unique([workflowId, position])
+}
+
+enum WorkflowStepType {
+  CONDITION
+  SEND_EMAIL
+  CREATE_TASK
+  UPDATE_FIELD
+  ASSIGN_OWNER
+  ADD_TAG
+  MOVE_STAGE
+  SEND_NOTIFICATION
+  CALL_WEBHOOK
+  WAIT
+  SEND_WHATSAPP
+  ENROLL_SEQUENCE
+}
+
+model WorkflowRun {
+  id                  String            @id @default(cuid())
+  workflowId          String
+  workflow            Workflow          @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  entityType          String
+  entityId            String
+  status              WorkflowRunStatus @default(RUNNING)
+  currentStep         Int               @default(0)
+  logs                Json[]            @default([])
+  context             Json
+  stepsSnapshot       Json
+  eventKey            String
+  resumeAt            DateTime?
+  leaseToken          String?
+  leaseExpiresAt      DateTime?
+  externalStartedStep Int?
+  startedAt           DateTime          @default(now())
+  completedAt         DateTime?
+  error               String?
+
+  @@unique([workflowId, eventKey])
+  @@index([workflowId, startedAt])
+  @@index([status, resumeAt, leaseExpiresAt])
+}
+
+enum WorkflowRunStatus {
+  RUNNING
+  WAITING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Webhook {
+  id              String            @id @default(cuid())
+  name            String
+  url             String
+  events          String[]
+  secret          String?
+  headers         Json?
+  isActive        Boolean           @default(true)
+  lastTriggeredAt DateTime?
+  failCount       Int               @default(0)
+  workspaceId     String
+  workspace       Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deliveries      WebhookDelivery[]
+  deletedAt       DateTime?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([workspaceId, isActive])
+  @@index([workspaceId, createdAt])
+}
+
+model WebhookDelivery {
+  id             String         @id @default(cuid())
+  webhookId      String
+  webhook        Webhook        @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  event          String
+  payload        Json
+  payloadText    String
+  eventKey       String
+  endpointUrl    String
+  signingSecret  String?
+  requestHeaders Json?
+  isTest         Boolean        @default(false)
+  responseCode   Int?
+  responseBody   String?
+  duration       Int?
+  error          String?
+  status         DeliveryStatus @default(PENDING)
+  attempts       Int            @default(0)
+  nextRetryAt    DateTime?
+  leaseToken     String?
+  leaseExpiresAt DateTime?
+  createdAt      DateTime       @default(now())
+
+  @@unique([webhookId, eventKey])
+  @@index([webhookId, createdAt])
+  @@index([status, nextRetryAt, leaseExpiresAt])
+}
+
+enum DeliveryStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
 }
 
 model RecordPermission {

@@ -5,6 +5,8 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { canAccess, getAccessibleEntityIds } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { createDealSchema } from "@/lib/validations/deal";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -115,9 +117,14 @@ export async function POST(request: Request) {
       return Response.json({ error: "Related record is not accessible." }, { status: 403, headers });
     if (!(await belongsToWorkspace(member.workspaceId, parsed.data)))
       return Response.json({ error: "Related record is outside this workspace." }, { status: 400, headers });
-    const deal = await prisma.deal.create({
-      data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
-      include: dealInclude,
+    const deal = await prisma.$transaction(async (tx) => {
+      const created = await tx.deal.create({
+        data: { ...parsed.data, ownerId: parsed.data.ownerId ?? user.id, workspaceId: member.workspaceId },
+        include: dealInclude,
+      });
+      await triggerWorkflows("DEAL_CREATED", "Deal", created.id, member.workspaceId, {}, tx, created.id);
+      await dispatchWebhooks("deal.created", created, member.workspaceId, tx, created.id);
+      return created;
     });
     return Response.json(deal, { status: 201, headers });
   } catch (error) {

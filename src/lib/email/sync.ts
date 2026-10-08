@@ -5,6 +5,8 @@ import { type gmail_v1, google } from "googleapis";
 
 import { createNotification } from "@/lib/notifications";
 import { prisma } from "@/lib/prisma";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 
 import { accessTokenFor } from "./tokens";
 
@@ -66,14 +68,33 @@ async function saveMessage(
     account.workspaceId,
   );
   try {
-    await prisma.emailMessage.create({
-      data: {
-        ...data,
-        accountId: account.id,
-        workspaceId: account.workspaceId,
-        contactId,
-        status: data.direction === "INBOUND" ? "DELIVERED" : "SENT",
-      },
+    await prisma.$transaction(async (tx) => {
+      const message = await tx.emailMessage.create({
+        data: {
+          ...data,
+          accountId: account.id,
+          workspaceId: account.workspaceId,
+          contactId,
+          status: data.direction === "INBOUND" ? "DELIVERED" : "SENT",
+        },
+      });
+      if (data.direction === "INBOUND")
+        await triggerWorkflows("EMAIL_RECEIVED", "EmailMessage", message.id, account.workspaceId, {}, tx, message.id);
+      if (data.direction === "INBOUND")
+        await dispatchWebhooks(
+          "email.received",
+          {
+            id: message.id,
+            from: message.from,
+            to: message.to,
+            subject: message.subject,
+            contactId,
+            receivedAt: message.receivedAt,
+          },
+          account.workspaceId,
+          tx,
+          message.id,
+        );
     });
     if (data.direction === "INBOUND") {
       try {

@@ -32,6 +32,14 @@ for (const name of [
   "tag",
   "pipelineStage",
   "workspace",
+  "workflow",
+  "workflowStep",
+  "workflowRun",
+  "activity",
+  "emailMessage",
+  "emailAccount",
+  "webhook",
+  "webhookDelivery",
 ]) {
   db[name] = Object.fromEntries(
     [
@@ -46,6 +54,7 @@ for (const name of [
       "update",
       "updateMany",
       "delete",
+      "deleteMany",
     ].map((method) => [method, unexpected]),
   );
 }

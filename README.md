@@ -122,6 +122,49 @@ Configure fields with CRM keys `firstName`, `lastName`, `email`, `phone`, `messa
 
 Submissions are atomic and replay-safe (`requestId`: UUID). They use a honeypot, 64 KiB JSON limit and a database-backed limit of 60 submissions/form/minute. Enable `FORMS_TRUST_PROXY=true` **only** if a trusted proxy replaces forwarding headers, adding a limit of 5 submissions/IP/form/minute. For public production traffic add proxy/WAF abuse protection or CAPTCHA; these safeguards are not a complete anti-bot service. Submission metadata may contain IP/referrer/user agent: configure an appropriate retention/privacy policy. Deleting a form removes its submissions but preserves contacts and deals. New models are not applied to a live database automatically.
 
+### Workflow engine (19.1)
+
+Apply `prisma/sql/19-1-workflows.sql` once and run `npx prisma generate`. Start a **separate persistent process**, `npm run worker:workflows`, with `DATABASE_URL`, `REDIS_URL` and email provider/encryption settings when sending emails. Do not run workers inside Vercel route handlers. The worker uses the dedicated `workflow-execute` queue; email sync stays on `email-sync`.
+
+`/api/workflows` supports paginated GET and POST; `/api/workflows/{id}` supports GET, PATCH and soft DELETE (history is preserved). Owners/admins manage workspace workflows; managers manage only their own, so editing another creator's automation cannot escalate permissions. PATCH includes the current ISO `updatedAt`. `/api/workflows/{id}/runs` provides paginated history and POST for active MANUAL workflows with `{entityType, entityId, requestId}` (UUID). History redacts inaccessible record identifiers/logs. This task is backend-only; a visual workflow editor is not included.
+
+Events are recorded atomically with contact creation/update, deal creation/stage changes (including Closed Won/Lost), activity completion, form submission/new leads/deals, inbound email sync and first email open. Workflow actions intentionally do not recursively trigger other workflows, preventing automation loops. Email triggers use entityType `EmailMessage`; sending requires an accessible linked contact. Scheduled workflows require `triggerConfig: {entityType, entityId, intervalMinutes}`; intervals are anchored to workflow creation, evaluated every 15 seconds, and do not backfill missed intervals after downtime.
+
+Supported steps: CONDITION, SEND_EMAIL, CREATE_TASK, UPDATE_FIELD (explicit safe fields), ASSIGN_OWNER, ADD_TAG, MOVE_STAGE, SEND_NOTIFICATION, CALL_WEBHOOK, WAIT. `SEND_WHATSAPP` and `ENROLL_SEQUENCE` are reserved enum values and rejected by validation until their automation adapters exist. Each step is `{type, config}`; array order determines its position. A false CONDITION cancels remaining steps. WAIT uses `config.duration` in **seconds** (1–2,592,000); CREATE_TASK accepts `title`, optional `description`/`userId`, and `dueInMinutes` (default 1440). SEND_EMAIL requires the creator's `accountId`, `subject`, `bodyHtml`, optional `trackingEnabled`. Notifications accept `title`, optional `body`/`userId`; ASSIGN_OWNER uses `userId`, ADD_TAG `tagId`, MOVE_STAGE `stageId`, UPDATE_FIELD `{field, value}`, CALL_WEBHOOK `{url}`. Templates use flat `{{firstName}}`, `{{email}}`, `{{title}}`, etc. from event snapshots; HTML substitutions are escaped, unknown variables fail closed. Trigger/CONDITION operators: equals, not_equals, contains, gt, lt; missing/invalid fields never match.
+
+Runs persist immutable step/context snapshots, checkpoints, leases and event deduplication in PostgreSQL. The worker dispatcher recovers pending runs after Redis downtime; WAIT creates a delayed BullMQ continuation. Database actions and checkpoints are transactional. An external email/webhook started before a crash has an **uncertain outcome**, so the run fails instead of blindly resending: inspect the provider before starting a new manual run. Webhooks send an Idempotency-Key; receivers should honor it. Workflow deactivation/deletion takes effect at the next step (already-started external requests cannot be recalled). Creator membership, workspace-scoped record permissions and action references are rechecked while executing, independent of the creator's currently selected workspace.
+
+CALL_WEBHOOK requires HTTPS port 443 and an exact hostname in `WORKFLOW_WEBHOOK_ALLOWED_HOSTS`. DNS answers are checked against private/reserved IP ranges and pinned for the request; redirects are not followed, requests time out after 10 seconds and responses/payloads are bounded. Keep the host allowlist administrator-controlled and add network-level egress rules in production. Workflow snapshots may contain contact data: restrict DB access and define a retention policy. The SQL migration is not applied automatically.
+
+Example POST `/api/workflows`:
+
+```json
+{
+  "name": "Follow up on website leads",
+  "trigger": "CONTACT_CREATED",
+  "triggerConfig": {"entityType": "Contact", "conditions": [{"field": "source", "operator": "equals", "value": "WEBSITE"}]},
+  "steps": [
+    {"type": "CREATE_TASK", "config": {"title": "Follow up with {{firstName}}", "dueInMinutes": 60}},
+    {"type": "WAIT", "config": {"duration": 3600}},
+    {"type": "SEND_NOTIFICATION", "config": {"title": "Lead follow-up due", "body": "Check {{firstName}} {{lastName}}"}}
+  ]
+}
+```
+
+### Outgoing webhooks (20.1)
+
+Apply `prisma/sql/20-1-webhooks.sql` before deploying the updated CRM routes, then run `npx prisma generate`. Configure a stable `WEBHOOK_TOKEN_ENCRYPTION_KEY` (32 random bytes, base64) and launch `npm run worker:webhooks` in a persistent process with `DATABASE_URL` and `REDIS_URL`. The independent `webhook-deliver` queue must not share an email-sync processor. Apply pending 19.1/19.2 SQL scripts in order before deploying the whole checkout.
+
+Owners/admins manage endpoints at `/dashboard/settings/webhooks` and `/api/webhooks-config` (GET/POST); `/{id}` supports GET/PATCH/DELETE, `/{id}/deliveries` paginated history (or a scoped `deliveryId` filter), and `/{id}/test` POST with a UUID `requestId`. PATCH requires current `updatedAt`. Creation generates a signing secret if omitted; creation/rotation returns the plaintext **once**, and ordinary GET/history responses never expose secrets/custom header values. Secrets and custom headers are AES-256-GCM encrypted in the database. Rotate with `{rotateSecret: true, updatedAt}`; a supplied `{secret}` also replaces it. Headers omitted from PATCH stay unchanged, `{headers: {}}` clears them. Deleted endpoints are soft-deleted; future deliveries stop, history remains stored. Requests already in flight cannot be recalled. Paused endpoints permit explicit test sends only.
+
+CRM mutations and pending deliveries commit in one PostgreSQL transaction. The worker polls persisted work every 15 seconds and uses BullMQ delayed jobs for **three retries after the first send**: 1 minute, 5 minutes, 30 minutes (four HTTP attempts maximum). Network failures and every non-2xx status, including redirects/429/5xx, are retried; redirects are never followed. `failCount` counts consecutive failed attempts, resetting on success. Interrupted attempts consume their attempt slot and are rescheduled with backoff. Endpoints URL/headers/secret/payload are snapshotted per delivery, so queued retries remain consistent through edits or key rotation. Keep the previous signing secret accepted by the receiver until queued deliveries finish. Preserve the encryption key; changing it makes existing encrypted configuration unreadable.
+
+Payload envelope: `{id, event, createdAt, workspaceId, data}`. `X-Webhook-Signature` is `sha256=<hex HMAC-SHA256>` over the **exact raw UTF-8 request body** with the displayed signing secret. Verify with constant-time comparison before parsing/processing. `X-Webhook-Delivery-Id` and `Idempotency-Key` identify one delivery across attempts; receivers must deduplicate because outbound HTTP is at-least-once (a timeout/crash can occur after a receiver processed the request). The exact payload text is stored separately from JSONB to keep HMAC bytes stable. Payloads are bounded to 256 KiB; response reading to 64 KiB, stored body to 2,000 characters; known credential values are redacted from responses. History may contain contact data: restrict access and define a retention policy.
+
+Supported subscriptions: contact.created/updated/deleted (deleted means CRM archival), deal.created/stage_changed/won/lost, activity.completed, form.submitted, email.received/opened. Won/lost use Closed Won/Closed Lost stages. First email open only emits once. Inbound email events omit large HTML/text bodies. Test calls enqueue a `webhook.test` payload and return 202; the settings UI polls the real delivery result instead of pretending a queued job succeeded. If the result stays PENDING, verify the worker is running.
+
+Only public HTTPS endpoints on port 443 are permitted. Credentials/fragments and localhost/private/reserved addresses are blocked; all DNS answers are validated and one address is pinned for TLS, with a 10-second total DNS/request deadline. Set `WEBHOOK_ALLOWED_HOSTS` to a comma-separated exact-host allowlist to restrict destinations further. HTTP header overrides cannot alter signing, Host, content length or connection control. Keep allowlist/encryption settings administrator-controlled; use network-level egress rules in production. No migration or live external delivery runs automatically during development checks.
+
 ### Demo credentials
 
 | Role | Email | Password |
@@ -166,7 +209,17 @@ npm run test:integrations
 
 The telephony suite uses Node.js 24+, mocked Prisma delegates and simulated signed Twilio callbacks. It makes no real calls and covers bridge setup, authorization, workspace isolation, callback retries, terminal status preservation, recording correlation and atomic missed-call notifications.
 
-The integration command runs the telephony and messaging suites together, including webhook signatures, batch parsing, deduplication, unread counts, contact/workspace access, safe channel responses, outbound idempotency and WhatsApp reply-window/template behavior. It does not send real messages or connect provider accounts.
+The integration command runs telephony, messaging, forms, workflows and outgoing webhook suites, including authorization, transaction rollback, signatures, delivery leases, deduplication and all four delivery attempts. It does not send real messages or connect provider accounts.
+
+`npm run preview:webhooks` serves the actual webhook settings component and project styles at `http://127.0.0.1:3107`, using clearly labelled in-memory fixtures. It never connects to CRM authentication, Prisma, Redis or real webhook endpoints; preview edits disappear on reload.
+
+### Visual workflows (19.2)
+
+The `/dashboard/workflows` list supports creation, active toggles and usage metadata. New workflows start paused. The React Flow editor supports dragging/clicking palette steps, inline node configuration, Yes/No branches, positions/viewport persistence, keyboard/touch connections, deletion, validation, conflict detection, reload/discard protection and paginated run history. Existing linear workflows are converted on the first save; false conditions end that branch without executing later actions.
+
+Apply `prisma/sql/19-1-workflows.sql` and then `prisma/sql/19-2-workflow-canvas.sql` before using the UI. `npm run worker:workflows` must run separately in a persistent Node process with PostgreSQL/Redis access; Vercel Functions do not host this long-running BullMQ worker. Workflow UI needs no new environment variables. `WORKFLOW_WEBHOOK_ALLOWED_HOSTS` permits exact public HTTPS hosts for the Call Webhook action; empty disables that action. Email actions require the creator’s connected email account and email configuration.
+
+`npm run preview:workflows` serves the actual list/editor/run log at `http://127.0.0.1:3108` using labelled, in-memory fixtures with no provider deliveries or database access.
 
 ## Built with
 

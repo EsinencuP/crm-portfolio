@@ -13,6 +13,7 @@ import {
   ScrollText,
   UserCog,
   Users,
+  Webhook,
 } from "lucide-react";
 
 export interface SidebarNavItem {
@@ -32,6 +33,7 @@ export const sidebarNav = {
     { title: "Mail", url: "/dashboard/mail", icon: Mail },
     { title: "Inbox", url: "/dashboard/inbox", icon: MessageSquare },
     { title: "Forms", url: "/dashboard/forms", icon: FileInput },
+    { title: "Workflows", url: "/dashboard/workflows", icon: GitBranch },
   ],
   analytics: [{ title: "Reports", url: "/dashboard/analytics", icon: BarChart3 }],
   settings: [
@@ -41,6 +43,7 @@ export const sidebarNav = {
     { title: "Audit Log", url: "/dashboard/settings/audit-log", icon: ScrollText },
     { title: "Email Settings", url: "/dashboard/settings/email", icon: Mail },
     { title: "Messaging", url: "/dashboard/settings/messaging", icon: MessageSquare },
+    { title: "Webhooks", url: "/dashboard/settings/webhooks", icon: Webhook },
   ],
 } as const satisfies Record<string, readonly SidebarNavItem[]>;
 

@@ -18,6 +18,9 @@ let state;
 let member;
 let form;
 beforeEach(() => {
+  mock.method(prisma.workflow, "findMany", async () => []);
+  mock.method(prisma.webhook, "findMany", async () => []);
+  mock.method(prisma.contact, "findUniqueOrThrow", async () => state.contacts[0]);
   globalThis.telephonyTestActor = { id: "user-1" };
   delete process.env.FORMS_TRUST_PROXY;
   member = { id: "member-1", userId: "user-1", workspaceId: "workspace-1", role: "MANAGER" };

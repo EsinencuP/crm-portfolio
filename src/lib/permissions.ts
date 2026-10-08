@@ -31,9 +31,12 @@ export async function canAccess(
   entityType: string,
   entityId: string,
   requiredLevel: Exclude<PermissionLevel, "NONE">,
+  workspaceId?: string,
 ): Promise<boolean> {
   if (!isEntityType(entityType)) return false;
-  const member = await getActiveWorkspaceMember(userId);
+  const member = workspaceId
+    ? await prisma.workspaceMember.findUnique({ where: { userId_workspaceId: { userId, workspaceId } } })
+    : await getActiveWorkspaceMember(userId);
   if (!member) return false;
   const entity = await findEntity(entityType, entityId, member.workspaceId);
   if (!entity) return false;

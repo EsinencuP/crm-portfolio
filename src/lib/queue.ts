@@ -19,6 +19,18 @@ export function getEmailSyncQueue() {
 
 export { redisConnection as getQueueConnection };
 
+let workflowQueue: Queue | null = null;
+export function getWorkflowQueue() {
+  if (!workflowQueue) workflowQueue = new Queue("workflow-execute", { connection: redisConnection() });
+  return workflowQueue;
+}
+
+let webhookQueue: Queue | null = null;
+export function getWebhookQueue() {
+  if (!webhookQueue) webhookQueue = new Queue("webhook-deliver", { connection: redisConnection() });
+  return webhookQueue;
+}
+
 // Named exports for standalone workers and producers.
 export const connection = redisConnection();
 export const emailSyncQueue = getEmailSyncQueue();

@@ -6,6 +6,8 @@ import { createNotification } from "@/lib/notifications";
 import { activityAccessWhere, canAccess, canEditActivity } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { updateActivitySchema } from "@/lib/validations/activity";
+import { dispatchWebhooks } from "@/lib/webhooks/dispatcher";
+import { triggerWorkflows } from "@/lib/workflows/engine";
 import { belongsToWorkspace, getActiveWorkspaceMember } from "@/lib/workspace";
 
 export const runtime = "nodejs";
@@ -71,10 +73,31 @@ export async function PATCH(request: Request, { params }: Context) {
     const data: Prisma.ActivityUncheckedUpdateInput = { ...parsed.data };
     if (parsed.data.completed === true) data.completedAt = new Date();
     if (parsed.data.completed === false) data.completedAt = null;
-    const activity = await prisma.activity.update({
-      where: { id: (await params).id, workspaceId: member.workspaceId },
-      data,
-      include,
+    const activity = await prisma.$transaction(async (tx) => {
+      const activityId = (await params).id;
+      await tx.$queryRaw`SELECT "id" FROM "Activity" WHERE "id" = ${activityId} AND "workspaceId" = ${member.workspaceId} FOR UPDATE`;
+      const old = await tx.activity.findUniqueOrThrow({
+        where: { id: activityId, workspaceId: member.workspaceId },
+        select: { completed: true },
+      });
+      const updated = await tx.activity.update({
+        where: { id: (await params).id, workspaceId: member.workspaceId },
+        data,
+        include,
+      });
+      if (!old.completed && updated.completed)
+        await triggerWorkflows(
+          "ACTIVITY_COMPLETED",
+          "Activity",
+          updated.id,
+          member.workspaceId,
+          {},
+          tx,
+          updated.updatedAt.toISOString(),
+        );
+      if (!old.completed && updated.completed)
+        await dispatchWebhooks("activity.completed", updated, member.workspaceId, tx, updated.updatedAt.toISOString());
+      return updated;
     });
     if (activity.type === "TASK" && previous && previous.ownerId !== activity.ownerId && activity.ownerId !== user.id) {
       await createNotification({

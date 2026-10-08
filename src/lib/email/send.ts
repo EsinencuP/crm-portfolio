@@ -75,7 +75,8 @@ export async function sendEmail(input: SendEmailInput) {
   if (!account) throw new Error("Email account not found");
   if (account.provider !== "GMAIL" && account.provider !== "OUTLOOK") throw new Error("Unsupported email provider");
   if (input.contactId) {
-    if (!(await canAccess(input.userId, "Contact", input.contactId, "EDIT"))) throw new Error("Contact not accessible");
+    if (!(await canAccess(input.userId, "Contact", input.contactId, "EDIT", input.workspaceId)))
+      throw new Error("Contact not accessible");
     const contact = await prisma.contact.findFirst({
       where: { id: input.contactId, workspaceId: input.workspaceId },
       select: { email: true },
@@ -83,7 +84,7 @@ export async function sendEmail(input: SendEmailInput) {
     if (!contact?.email || !input.to.some((address) => address.toLowerCase() === contact.email?.toLowerCase()))
       throw new Error("Recipient does not match contact email");
   }
-  if (input.dealId && !(await canAccess(input.userId, "Deal", input.dealId, "EDIT")))
+  if (input.dealId && !(await canAccess(input.userId, "Deal", input.dealId, "EDIT", input.workspaceId)))
     throw new Error("Deal not accessible");
 
   let contactId = input.contactId ?? null;
@@ -92,7 +93,8 @@ export async function sendEmail(input: SendEmailInput) {
       where: { workspaceId: input.workspaceId, email: { equals: input.to[0], mode: "insensitive" } },
       select: { id: true },
     });
-    if (matched && (await canAccess(input.userId, "Contact", matched.id, "EDIT"))) contactId = matched.id;
+    if (matched && (await canAccess(input.userId, "Contact", matched.id, "EDIT", input.workspaceId)))
+      contactId = matched.id;
   }
 
   const trackingId = input.trackingEnabled ? randomUUID() : null;
