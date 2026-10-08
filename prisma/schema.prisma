@@ -34,6 +34,9 @@ model User {
   createdWorkflows      Workflow[]              @relation("WorkflowCreator")
   recordPermissions     RecordPermission[]      @relation("RecordPermissions")
   permissionsGranted    RecordPermission[]      @relation("PermissionsGranted")
+  quotations            Quotation[]             @relation("QuotationOwner")
+  invoices              Invoice[]               @relation("InvoiceOwner")
+  recordedPayments      Payment[]               @relation("PaymentRecorder")
 }
 
 model Workspace {
@@ -64,7 +67,227 @@ model Workspace {
   leadCaptureForms  LeadCaptureForm[]
   workflows         Workflow[]
   webhooks          Webhook[]
+  products          Product[]
+  quotations        Quotation[]
+  invoices          Invoice[]
+  payments          Payment[]
+  documentSequences DocumentSequence[]
   recordPermissions RecordPermission[]
+}
+
+model Product {
+  id          String     @id @default(cuid())
+  name        String
+  sku         String?
+  description String?
+  unitPrice   Decimal    @db.Decimal(12, 2)
+  currency    String     @default("USD")
+  unit        String     @default("unit")
+  taxRate     Decimal    @default(0) @db.Decimal(5, 2)
+  isActive    Boolean    @default(true)
+  category    String?
+  imageUrl    String?
+  workspaceId String
+  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deletedAt   DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  lineItems   LineItem[]
+
+  @@unique([sku, workspaceId])
+  @@index([workspaceId])
+  @@index([workspaceId, deletedAt, name])
+  @@index([workspaceId, deletedAt, category, isActive])
+}
+
+model DocumentSequence {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        String
+  year        Int
+  counter     Int       @default(0)
+
+  @@id([workspaceId, kind, year])
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CONVERTED
+}
+
+enum DocumentSendState {
+  IDLE
+  SENDING
+  SENT
+  UNCERTAIN
+}
+
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model Quotation {
+  id             String            @id @default(cuid())
+  number         String
+  status         QuotationStatus   @default(DRAFT)
+  issueDate      DateTime          @default(now())
+  expiryDate     DateTime?
+  currency       String            @default("USD")
+  subtotal       Decimal           @db.Decimal(12, 2)
+  taxTotal       Decimal           @db.Decimal(12, 2)
+  discountTotal  Decimal           @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal           @db.Decimal(12, 2)
+  notes          String?
+  terms          String?
+  clientName     String
+  clientEmail    String?
+  issuerName     String
+  contactId      String?
+  contact        Contact?          @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  companyId      String?
+  company        Company?          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  dealId         String?
+  deal           Deal?             @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  ownerId        String
+  owner          User              @relation("QuotationOwner", fields: [ownerId], references: [id])
+  workspaceId    String
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id])
+  lineItems      LineItem[]
+  invoices       Invoice[]
+  sendState      DocumentSendState @default(IDLE)
+  sentAt         DateTime?
+  emailMessageId String?
+  requestId      String
+  requestDigest  String
+  deletedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([workspaceId, number])
+  @@unique([workspaceId, requestId])
+  @@index([workspaceId, deletedAt, createdAt])
+  @@index([workspaceId, ownerId, status])
+}
+
+model Invoice {
+  id             String            @id @default(cuid())
+  number         String
+  status         InvoiceStatus     @default(DRAFT)
+  issueDate      DateTime          @default(now())
+  dueDate        DateTime?
+  currency       String            @default("USD")
+  subtotal       Decimal           @db.Decimal(12, 2)
+  taxTotal       Decimal           @db.Decimal(12, 2)
+  discountTotal  Decimal           @default(0) @db.Decimal(12, 2)
+  grandTotal     Decimal           @db.Decimal(12, 2)
+  amountPaid     Decimal           @default(0) @db.Decimal(12, 2)
+  notes          String?
+  terms          String?
+  clientName     String
+  clientEmail    String?
+  issuerName     String
+  contactId      String?
+  contact        Contact?          @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  companyId      String?
+  company        Company?          @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  dealId         String?
+  deal           Deal?             @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  ownerId        String
+  owner          User              @relation("InvoiceOwner", fields: [ownerId], references: [id])
+  workspaceId    String
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id])
+  quotationId    String?           @unique
+  quotation      Quotation?        @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  lineItems      LineItem[]
+  payments       Payment[]
+  sendState      DocumentSendState @default(IDLE)
+  sentAt         DateTime?
+  emailMessageId String?
+  requestId      String?
+  requestDigest  String?
+  deletedAt      DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([workspaceId, number])
+  @@unique([id, workspaceId])
+  @@unique([workspaceId, requestId])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, deletedAt, status, dueDate])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String
+  method        PaymentMethod
+  status        PaymentStatus @default(COMPLETED)
+  reference     String?
+  paidAt        DateTime      @default(now())
+  notes         String?
+  invoiceId     String
+  workspaceId   String
+  invoice       Invoice       @relation(fields: [invoiceId, workspaceId], references: [id, workspaceId], onDelete: Restrict)
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  recordedById  String
+  recordedBy    User          @relation("PaymentRecorder", fields: [recordedById], references: [id], onDelete: Restrict)
+  requestId     String
+  requestDigest String
+  createdAt     DateTime      @default(now())
+
+  @@unique([invoiceId, requestId])
+  @@unique([invoiceId, method, reference])
+  @@index([workspaceId, invoiceId, paidAt])
+}
+
+enum PaymentMethod {
+  BANK_TRANSFER
+  CREDIT_CARD
+  PAYPAL
+  STRIPE
+  CASH
+  CHECK
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+model LineItem {
+  id          String     @id @default(cuid())
+  productId   String?
+  product     Product?   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  description String
+  quantity    Decimal    @db.Decimal(10, 2)
+  unitPrice   Decimal    @db.Decimal(12, 2)
+  discount    Decimal    @default(0) @db.Decimal(5, 2)
+  taxRate     Decimal    @default(0) @db.Decimal(5, 2)
+  total       Decimal    @db.Decimal(12, 2)
+  position    Int        @default(0)
+  quotationId String?
+  quotation   Quotation? @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  invoiceId   String?
+  invoice     Invoice?   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([quotationId, position])
+  @@index([invoiceId, position])
+  @@index([productId])
 }
 
 model Workflow {
@@ -301,6 +524,8 @@ model Notification {
 }
 
 enum NotificationType {
+  PAYMENT_RECEIVED
+  INVOICE_PAID
   DEAL_WON
   DEAL_LOST
   DEAL_STAGE_CHANGED
@@ -430,6 +655,8 @@ model Contact {
   messagingConversations MessagingConversation[]
   formSubmissions        FormSubmission[]
   emailMessages          EmailMessage[]
+  quotations             Quotation[]
+  invoices               Invoice[]
   tags                   Tag[]
   customFields           Json?
   createdAt              DateTime                @default(now())
@@ -499,9 +726,9 @@ enum ContactStatus {
 }
 
 model Company {
-  id          String    @id @default(cuid())
+  id          String      @id @default(cuid())
   workspaceId String
-  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id])
   name        String
   domain      String?
   industry    String?
@@ -512,10 +739,12 @@ model Company {
   description String?
   phone       String?
   contacts    Contact[]
+  quotations  Quotation[]
+  invoices    Invoice[]
   deals       Deal[]
   notes       Note[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
 
   @@unique([workspaceId, domain])
   @@index([workspaceId])
@@ -556,6 +785,8 @@ model Deal {
   notes         Note[]
   phoneCalls    PhoneCall[]
   emailMessages EmailMessage[]
+  quotations    Quotation[]
+  invoices      Invoice[]
   tags          Tag[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

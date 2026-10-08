@@ -40,6 +40,13 @@ for (const name of [
   "emailAccount",
   "webhook",
   "webhookDelivery",
+  "product",
+  "company",
+  "quotation",
+  "invoice",
+  "payment",
+  "lineItem",
+  "documentSequence",
 ]) {
   db[name] = Object.fromEntries(
     [

@@ -3,6 +3,7 @@ import "server-only";
 import { google } from "googleapis";
 import sanitizeHtml from "sanitize-html";
 
+import { emailMimeContent, graphPdfAttachments, type PdfEmailAttachment } from "@/lib/email/attachments";
 import { graphClient } from "@/lib/email/outlook-client";
 import { accessTokenFor } from "@/lib/email/tokens";
 import { assertTrackingReady, safeDestination, trackedClickUrl, trackingOrigin } from "@/lib/email/tracking";
@@ -22,6 +23,7 @@ export interface SendEmailInput {
   trackingEnabled?: boolean;
   userId: string;
   workspaceId: string;
+  attachments?: PdfEmailAttachment[];
 }
 
 function prepareHtml(html: string, trackingId: string | null) {
@@ -69,6 +71,16 @@ function prepareHtml(html: string, trackingId: string | null) {
 }
 
 export async function sendEmail(input: SendEmailInput) {
+  if (
+    input.attachments?.some(
+      (file) =>
+        !/^[a-zA-Z0-9._-]{1,120}$/.test(file.filename) ||
+        file.contentType !== "application/pdf" ||
+        file.content.byteLength > 5 * 1024 * 1024,
+    ) ||
+    (input.attachments?.length ?? 0) > 2
+  )
+    throw new Error("Invalid email attachments");
   const account = await prisma.emailAccount.findFirst({
     where: { id: input.accountId, userId: input.userId, workspaceId: input.workspaceId },
   });
@@ -124,17 +136,16 @@ export async function sendEmail(input: SendEmailInput) {
     if (account.provider === "GMAIL") {
       const auth = new google.auth.OAuth2();
       auth.setCredentials({ access_token: accessToken });
+      const boundary = `crm-${randomUUID()}`;
+      const attachments = input.attachments ?? [];
+      const content = emailMimeContent(finalHtml, attachments, boundary);
       const raw = [
         `From: ${account.email}`,
         `To: ${input.to.join(", ")}`,
         ...(cc.length ? [`Cc: ${cc.join(", ")}`] : []),
         `Subject: =?UTF-8?B?${Buffer.from(input.subject).toString("base64")}?=`,
         "MIME-Version: 1.0",
-        "Content-Type: text/html; charset=UTF-8",
-        "Content-Transfer-Encoding: base64",
-        "",
-        Buffer.from(finalHtml).toString("base64"),
-        "",
+        ...content,
       ].join("\r\n");
       const result = await google.gmail({ version: "v1", auth }).users.messages.send({
         userId: "me",
@@ -151,6 +162,7 @@ export async function sendEmail(input: SendEmailInput) {
             body: { contentType: "HTML", content: finalHtml },
             toRecipients: input.to.map((address) => ({ emailAddress: { address } })),
             ccRecipients: cc.map((address) => ({ emailAddress: { address } })),
+            ...(input.attachments?.length ? { attachments: graphPdfAttachments(input.attachments) } : {}),
           },
           saveToSentItems: true,
         });

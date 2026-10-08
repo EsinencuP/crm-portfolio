@@ -12,6 +12,7 @@ export const webhookEvents = [
   "form.submitted",
   "email.received",
   "email.opened",
+  "invoice.paid",
 ] as const;
 export const retryDelays = [60000, 300000, 1800000] as const;
 export const maxDeliveryAttempts = retryDelays.length + 1;
