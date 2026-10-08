@@ -6,6 +6,9 @@ environment variables only, never in Git or `NEXT_PUBLIC_*` variables.
 
 ## Database
 
+Main was upgraded on 8 October 2026; see [migration record](NEON-MIGRATION-2026-10-08.md).
+Do not reapply the already committed 13.1–21.4 scripts to that branch.
+
 The linked Neon project is `nameless-meadow-11380888` (`crm-portfolio-db`), database
 `neondb`, main branch `br-little-recipe-b824kg3v`. Keep the existing database and
 records. Runtime uses pooled `DATABASE_URL`; migration tools use the direct
