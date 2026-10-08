@@ -37,6 +37,7 @@ model User {
   quotations            Quotation[]             @relation("QuotationOwner")
   invoices              Invoice[]               @relation("InvoiceOwner")
   recordedPayments      Payment[]               @relation("PaymentRecorder")
+  contracts             Contract[]              @relation("ContractOwner")
 }
 
 model Workspace {
@@ -72,6 +73,7 @@ model Workspace {
   invoices          Invoice[]
   payments          Payment[]
   documentSequences DocumentSequence[]
+  contracts         Contract[]
   recordPermissions RecordPermission[]
 }
 
@@ -108,6 +110,50 @@ model DocumentSequence {
   counter     Int       @default(0)
 
   @@id([workspaceId, kind, year])
+}
+
+model Contract {
+  id             String         @id @default(cuid())
+  title          String
+  number         String
+  status         ContractStatus @default(DRAFT)
+  startDate      DateTime?
+  endDate        DateTime?
+  value          Decimal?       @db.Decimal(12, 2)
+  currency       String         @default("USD")
+  content        String?
+  signedByClient Boolean        @default(false)
+  signedByUs     Boolean        @default(false)
+  documentUrl    String?
+  contactId      String?
+  contact        Contact?       @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  companyId      String?
+  company        Company?       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  dealId         String?
+  deal           Deal?          @relation(fields: [dealId], references: [id], onDelete: Restrict)
+  ownerId        String
+  owner          User           @relation("ContractOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  workspaceId    String
+  workspace      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  requestId      String
+  requestDigest  String
+  deletedAt      DateTime?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([workspaceId, number])
+  @@unique([workspaceId, requestId])
+  @@index([workspaceId, deletedAt, status, createdAt])
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_REVIEW
+  SENT
+  SIGNED
+  ACTIVE
+  EXPIRED
+  CANCELLED
 }
 
 enum QuotationStatus {
@@ -657,6 +703,7 @@ model Contact {
   emailMessages          EmailMessage[]
   quotations             Quotation[]
   invoices               Invoice[]
+  contracts              Contract[]
   tags                   Tag[]
   customFields           Json?
   createdAt              DateTime                @default(now())
@@ -741,6 +788,7 @@ model Company {
   contacts    Contact[]
   quotations  Quotation[]
   invoices    Invoice[]
+  contracts   Contract[]
   deals       Deal[]
   notes       Note[]
   createdAt   DateTime    @default(now())
@@ -787,6 +835,7 @@ model Deal {
   emailMessages EmailMessage[]
   quotations    Quotation[]
   invoices      Invoice[]
+  contracts     Contract[]
   tags          Tag[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt

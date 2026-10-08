@@ -23,6 +23,7 @@
     "preview:products": "node tests/ui/serve-webhook-preview.mjs --products",
     "preview:quotations": "node --import ./tests/register.mjs --import tsx tests/ui/serve-webhook-preview.mjs --quotations",
     "preview:invoices": "node --import ./tests/register.mjs --import tsx tests/ui/serve-webhook-preview.mjs --invoices",
+    "preview:contracts": "node tests/ui/serve-webhook-preview.mjs --contracts",
     "test:telephony": "node --import ./tests/register.mjs --import tsx --test tests/telephony.test.mjs",
     "test:integrations": "node --import ./tests/register.mjs --import tsx --test tests/*.test.mjs"
   },

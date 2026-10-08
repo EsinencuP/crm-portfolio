@@ -257,6 +257,14 @@ The send transaction claims a quotation before calling the provider. A timeout o
 
 PDFs embed the bundled OFL Noto Sans font (including Cyrillic) and paginate long descriptions/terms. Font tracing is configured for Vercel; PDFs and previews are authenticated/private, with no public client URL. No new environment variables are needed beyond existing database/email configuration. `npm run preview:quotations` serves real components and real PDF rendering at `http://127.0.0.1:3110` with labelled disposable fixtures and no live provider/database requests.
 
+## Contracts (21.4)
+
+Apply `prisma/sql/21-4-contracts.sql` after 21.2 before using `/dashboard/contracts`. No production migration is run by a check/build; no new environment variables are required. Contract numbers (`CTR-YYYY-NNNN`) are unique per workspace/year, matching the existing transactional document counter. Create requires a stable UUID `requestId`; edit/status/signatures/delete require current `updatedAt`. Related contact/company/deal must be accessible and belong to the same workspace and client.
+
+Draft and Pending Review content can be edited in a Markdown textarea with heading/bold/list toolbar and escaped preview. Mark Sent is a **manual status only**, not email delivery. Sent contracts are immutable. Signature switches are manual CRM records, not verified electronic signatures. Both marks automatically set Signed; removing a mark before activation returns to Sent. Activation requires both marks and a current date period; Signed/Active contracts can be marked Expired only after their end date. Expiry is explicit (no scheduler added). Cancelled and Expired are terminal. Only drafts may be soft-deleted; numbers stay reserved. Document links must be HTTPS, never fetched by the server. HTML/scripts in contract content are displayed as text.
+
+API applies the existing document owner/admin and linked-record access policy; Viewers are read-only. Mutations use optimistic concurrency and transactional audit logs; content body is not duplicated into audit logs. `npm run test:integrations` includes contracts API/lifecycle coverage. `npm run preview:contracts` serves real UI components with labelled disposable memory fixtures at `http://127.0.0.1:3112`.
+
 ## Built with
 
 The UI foundation comes from [next-shadcn-admin-dashboard-baseui](https://github.com/arhamkhnz/next-shadcn-admin-dashboard-baseui). Product patterns and design ideas were also informed by [Comp AI CRM](https://github.com/trycompai/crm), [Frappe CRM](https://github.com/frappe/crm), [Twenty](https://github.com/twentyhq/twenty), and [RuoYi-Vue-Pro](https://github.com/YunaiV/ruoyi-vue-pro).

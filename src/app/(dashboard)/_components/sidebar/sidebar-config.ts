@@ -5,6 +5,7 @@ import {
   CalendarDays,
   DollarSign,
   FileInput,
+  FileSignature,
   FileText,
   GitBranch,
   LayoutDashboard,
@@ -40,6 +41,7 @@ export const sidebarNav = {
     { title: "Products", url: "/dashboard/products", icon: Package },
     { title: "Quotations", url: "/dashboard/quotations", icon: FileText },
     { title: "Invoices", url: "/dashboard/invoices", icon: Receipt },
+    { title: "Contracts", url: "/dashboard/contracts", icon: FileSignature },
   ],
   analytics: [{ title: "Reports", url: "/dashboard/analytics", icon: BarChart3 }],
   settings: [

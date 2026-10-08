@@ -45,6 +45,7 @@ for (const name of [
   "quotation",
   "invoice",
   "payment",
+  "contract",
   "lineItem",
   "documentSequence",
 ]) {

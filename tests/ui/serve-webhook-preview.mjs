@@ -10,11 +10,13 @@ const workflowPreview = process.argv.includes("--workflows");
 const productPreview = process.argv.includes("--products");
 const quotationPreview = process.argv.includes("--quotations");
 const invoicePreview = process.argv.includes("--invoices");
+const contractPreview = process.argv.includes("--contracts");
 let previewKind = "webhook";
 if (workflowPreview) previewKind = "workflow";
 if (productPreview) previewKind = "product";
 if (quotationPreview) previewKind = "quotation";
 if (invoicePreview) previewKind = "invoice";
+if (contractPreview) previewKind = "contract";
 const js = await build({
   entryPoints: [`tests/ui/${previewKind}-preview-entry.tsx`],
   outfile: "preview.js",
@@ -24,7 +26,7 @@ const js = await build({
   format: "esm",
   jsx: "automatic",
   tsconfig: "tsconfig.json",
-  define: { "process.env.NODE_ENV": '"development"' },
+  define: { "process.env.NODE_ENV": '"development"', ...(contractPreview ? { "process.env": "{}" } : {}) },
 });
 const cssPath = resolve("src/app/globals.css");
 const css = await postcss([tailwind()]).process(await readFile(cssPath, "utf8"), { from: cssPath });
@@ -63,6 +65,8 @@ const server = createServer(async (request, response) => {
   response.writeHead(asset ? 200 : 404, { "Content-Type": asset?.[0] ?? "text/plain", "Cache-Control": "no-store" });
   response.end(asset?.[1] ?? "Not found");
 });
-const port = { invoice: 3111, quotation: 3110, product: 3109, workflow: 3108, webhook: 3107 }[previewKind];
+const port = { contract: 3112, invoice: 3111, quotation: 3110, product: 3109, workflow: 3108, webhook: 3107 }[
+  previewKind
+];
 server.listen(port, "127.0.0.1", () => console.log(`Fixture-only ${previewKind} UI: http://127.0.0.1:${port}`));
 process.on("SIGINT", () => server.close());
